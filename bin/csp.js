@@ -46,6 +46,7 @@ program
   .command('create <name>')
   .description('Create a new profile from current Claude Code state')
   .option('--from <profile>', 'Clone from an existing profile')
+  .option('-s, --source <path>', 'Path to .agents/ or kit directory to link')
   .option('-d, --description <text>', 'Profile description')
   .action(createCommand);
 
