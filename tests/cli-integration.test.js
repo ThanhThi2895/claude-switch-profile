@@ -60,14 +60,16 @@ describe('CLI Integration', () => {
     assert.ok(output.includes('No profiles found'));
   });
 
-  it('create captures current state', () => {
+  it('create produces a clean profile (no inherited files)', () => {
     const output = run('create testprofile -d "Test profile"', envOverrides);
     assert.ok(output.includes('testprofile'));
 
-    // Verify profile dir was created
+    // Verify profile dir and source.json were created
     assert.ok(existsSync(join(profilesDir, 'testprofile')));
     assert.ok(existsSync(join(profilesDir, 'testprofile', 'source.json')));
-    assert.ok(existsSync(join(profilesDir, 'testprofile', 'settings.json')));
+
+    // New profiles must NOT inherit mutable files from current state
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'settings.json')), false);
 
     // Verify profiles.json was updated
     const profiles = JSON.parse(readFileSync(join(profilesDir, 'profiles.json'), 'utf-8'));
@@ -102,13 +104,17 @@ describe('CLI Integration', () => {
   });
 
   it('create --from clones existing profile', () => {
+    // Create original with explicit content to clone
     run('create original -d "Original"', envOverrides);
+    // Manually add settings.json to original (simulating a save)
+    writeFileSync(join(profilesDir, 'original', 'settings.json'), '{"model":"opus"}');
+
     run('create clone --from original -d "Clone"', envOverrides);
 
     assert.ok(existsSync(join(profilesDir, 'clone')));
     assert.ok(existsSync(join(profilesDir, 'clone', 'source.json')));
 
-    // Clone should have same settings
+    // Clone should have same settings as original
     const origSettings = readFileSync(join(profilesDir, 'original', 'settings.json'), 'utf-8');
     const cloneSettings = readFileSync(join(profilesDir, 'clone', 'settings.json'), 'utf-8');
     assert.equal(origSettings, cloneSettings);

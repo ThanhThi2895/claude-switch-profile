@@ -24,6 +24,9 @@ export const SYMLINK_ITEMS = [
   '.luna.json',
 ];
 
+// Directory-type symlink items (auto-created in new profiles)
+export const SYMLINK_DIRS = ['rules', 'agents', 'skills', 'hooks'];
+
 // Mutable files managed via copy
 export const COPY_ITEMS = [
   'settings.json',

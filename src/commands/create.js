@@ -1,9 +1,8 @@
 import { mkdirSync, cpSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addProfile, getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveSymlinks } from '../symlink-manager.js';
 import { saveFiles } from '../file-operations.js';
-import { SYMLINK_ITEMS, SOURCE_FILE } from '../constants.js';
+import { SYMLINK_ITEMS, SYMLINK_DIRS, SOURCE_FILE } from '../constants.js';
 import { success, error, info, warn } from '../output-helpers.js';
 
 export const createCommand = (name, options) => {
@@ -53,11 +52,21 @@ export const createCommand = (name, options) => {
     // Also copy current mutable files
     saveFiles(profileDir);
   } else {
-    // Create from current ~/.claude state
+    // Create brand new independent profile — everything fresh, nothing copied
     mkdirSync(profileDir, { recursive: true });
-    saveSymlinks(profileDir);
-    saveFiles(profileDir);
-    info('Captured current Claude Code configuration');
+
+    // Create self-contained directories for each symlink directory item
+    const sourceMap = {};
+    for (const item of SYMLINK_DIRS) {
+      const itemDir = join(profileDir, item);
+      mkdirSync(itemDir, { recursive: true });
+      sourceMap[item] = itemDir;
+    }
+
+    writeFileSync(join(profileDir, SOURCE_FILE), JSON.stringify(sourceMap, null, 2) + '\n');
+    // Do NOT call saveFiles() — new profile should start clean
+    // without inheriting settings.json, .env, .ck*, etc. from current state
+    info('Created new independent profile (clean state)');
   }
 
   addProfile(name, { description: options.description || '' });

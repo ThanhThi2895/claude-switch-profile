@@ -5,7 +5,7 @@ import { PROFILES_DIR, LOCK_FILE, BACKUP_DIR, CLAUDE_DIR, COPY_ITEMS, COPY_DIRS 
 import { readCurrentSymlinks } from './symlink-manager.js';
 import { warn } from './output-helpers.js';
 
-const MAX_BACKUPS = 5;
+const MAX_BACKUPS = 2;
 
 // Acquire a lock file — atomic O_EXCL prevents TOCTOU race
 export const acquireLock = () => {
