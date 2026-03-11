@@ -1,0 +1,8 @@
+tests/
+plans/
+docs/
+.agents-hd/
+.claude/
+.gitignore
+*.tar.gz
+.DS_Store
