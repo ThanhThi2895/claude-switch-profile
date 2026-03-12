@@ -104,7 +104,7 @@ csp list
 Output example:
 
 ```
- * default — Default profile (initial capture) (2026-03-11)
+ * default — Vanilla Claude defaults (2026-03-11)
    work — Work setup (2026-03-11)
    experimental (2026-03-11)
 ```
@@ -402,6 +402,44 @@ File differences:
 - Compares `source.json` (symlink targets)
 - Lists file presence and content differences
 - Shows which files differ and in which profile they exist
+
+### uninstall
+
+Remove all profiles and restore Claude Code to its pre-CSP state.
+
+```bash
+csp uninstall
+```
+
+**Options:**
+- `-f, --force` — Skip confirmation prompt
+- `--profile <name>` — Restore a specific profile instead of the active one
+
+**Examples:**
+
+Uninstall with confirmation:
+```bash
+csp uninstall
+# Uninstall CSP and remove all profiles? This cannot be undone. (y/N)
+```
+
+Restore a specific profile during uninstall:
+```bash
+csp uninstall --profile production
+```
+
+Force uninstall without prompt:
+```bash
+csp uninstall --force
+```
+
+**Behavior:**
+1. Creates a final backup at `~/.claude-profiles/.backup/`
+2. Restores the active profile (or `--profile` choice) to `~/.claude`
+3. Removes `~/.claude-profiles/` entirely
+4. Prints reminder to run `npm uninstall -g claude-switch-profile`
+
+---
 
 ## How Profiles Work
 
