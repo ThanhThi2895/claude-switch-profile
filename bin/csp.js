@@ -15,6 +15,7 @@ import { exportCommand } from '../src/commands/export.js';
 import { importCommand } from '../src/commands/import.js';
 import { diffCommand } from '../src/commands/diff.js';
 import { initCommand } from '../src/commands/init.js';
+import { uninstallCommand } from '../src/commands/uninstall.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
@@ -87,5 +88,12 @@ program
   .command('diff <profileA> <profileB>')
   .description('Compare two profiles (use "current" for active profile)')
   .action(diffCommand);
+
+program
+  .command('uninstall')
+  .description('Remove all profiles and restore Claude Code to pre-CSP state')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .option('--profile <name>', 'Restore specific profile instead of active one')
+  .action(uninstallCommand);
 
 program.parse();
