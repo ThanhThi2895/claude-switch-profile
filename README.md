@@ -1,5 +1,9 @@
 # Claude Switch Profile (CSP)
 
+[![npm version](https://img.shields.io/npm/v/claude-switch-profile)](https://www.npmjs.com/package/claude-switch-profile)
+[![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A CLI tool for managing multiple Claude Code configurations and profiles. Effortlessly switch between different development setups, each with their own rules, agents, skills, and settings.
 
 ## Overview
@@ -110,6 +114,15 @@ Output example:
 ```
 
 The `*` marks the active profile.
+
+### 6. Uninstall CSP
+
+Remove CSP and restore your Claude Code to its original state:
+
+```bash
+csp uninstall
+# Uninstall CSP and remove all profiles? This cannot be undone. (y/N)
+```
 
 ## Commands Reference
 
@@ -508,6 +521,16 @@ Profiles are stored in `~/.claude-profiles/`:
 - Each profile needs its own independent configuration
 - Prevents accidental modifications from affecting other profiles
 
+### Real Directory Handling
+
+When `csp save` (or `csp use`) encounters a **real directory/file** in `~/.claude` for a managed item (instead of a symlink), it automatically:
+
+1. **Moves** the real item into the profile directory (`~/.claude-profiles/<name>/<item>`)
+2. **Replaces** it with a symlink at the original location
+3. **Records** the new location in `source.json`
+
+This ensures that profiles created from a fresh `~/.claude` setup (before any symlinks exist) work correctly on first use.
+
 ## Safety Features
 
 ### Lock File
@@ -736,6 +759,10 @@ npm run test:core       # Core library tests
 npm run test:cli        # CLI integration tests
 npm run test:safety     # Safety feature tests
 ```
+
+### Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and migration guidance.
 
 ### Project Structure
 
