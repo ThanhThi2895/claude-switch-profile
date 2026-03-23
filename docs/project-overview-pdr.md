@@ -27,6 +27,8 @@ Enable developers to:
 - **Use**: Switch to a different profile with auto-save and validation
 - **Save**: Manually save active profile state
 - **Delete**: Remove a profile (with confirmation)
+- **Launch**: Switch to a profile and immediately launch Claude Code (forwarding extra args)
+- **Uninstall**: Remove CSP and restore a chosen profile to `~/.claude` before wiping all data
 
 #### 2. Profile Sharing
 - **Export**: Package profile as tar.gz archive
@@ -69,7 +71,7 @@ Enable developers to:
 |---|---|
 | **Performance** | Profile switching < 2 seconds (excluding Claude restart) |
 | **Data Safety** | Auto-backups on every switch; lock file prevents concurrent ops |
-| **Portability** | Linux/macOS/Unix; Windows with WSL2 |
+| **Portability** | Linux/macOS/Unix; Windows 10+ (native junctions, no admin required) |
 | **Reliability** | Validates profile structure; detects stale locks; restores from backup on error |
 | **Testability** | Env var overrides (CSP_CLAUDE_DIR, CSP_PROFILES_DIR) for isolated testing |
 | **Usability** | Intuitive CLI with clear error messages; --dry-run for preview |
@@ -109,6 +111,7 @@ Enable developers to:
 | `profile-validator.js` | Profile structure validation |
 | `output-helpers.js` | Console output (colors, symbols) |
 | `constants.js` | Configuration paths and managed items lists |
+| `platform.js` | Cross-platform compatibility (Windows junctions, process detection) |
 
 ### Profile Switching Flow
 
@@ -122,6 +125,7 @@ CLI validates profile exists & structure valid
 (If --dry-run) Show changes and exit
     ↓
 Detect if Claude running (warn user)
+(Windows: uses tasklist; Unix: uses pgrep)
     ↓
 Acquire lock file (prevent concurrent ops)
     ↓
@@ -201,7 +205,7 @@ Remind user to restart Claude Code
 - Implement profile-validator.js (validation logic)
 
 ### Phase 3: CLI Commands
-- Implement all 9 commands (init, current, list, create, save, use, delete, export, import, diff)
+- Implement all 12 commands (init, current, list, create, save, use, delete, export, import, diff, launch, uninstall)
 - Wire commands into CLI framework
 - Implement error handling and messaging
 
@@ -220,7 +224,7 @@ Remind user to restart Claude Code
 ## Success Criteria
 
 ### Functional
-- [x] All 9 commands implemented and working
+- [x] All 12 commands implemented and working
 - [x] Profiles correctly capture/restore state
 - [x] Symlinks created/restored properly
 - [x] Files copied/restored correctly
@@ -266,7 +270,7 @@ Remind user to restart Claude Code
 
 ### Hard Dependencies
 - Node.js >= 18.0.0
-- POSIX-compliant system (symlinks, tar, pgrep)
+- POSIX or Windows 10+ (symlinks/junctions, tar, pgrep/tasklist)
 - Writable home directory
 
 ### External Dependencies (npm)
@@ -274,7 +278,7 @@ Remind user to restart Claude Code
 - `commander@^14.0.3` — CLI argument parsing
 
 ### Constraints
-- No Windows native support (WSL2 only)
+- Windows uses NTFS junctions and `tasklist` for process detection
 - Profile switching requires Claude Code restart
 - Cannot manage `.credentials.json` (left untouched for security)
 - Symlink targets must exist when restoring (unless --force)
@@ -298,7 +302,7 @@ Remind user to restart Claude Code
 5. **Snapshots** — Time-travel through profile history
 6. **Templates** — Pre-configured profile templates
 7. **Hooks** — Custom scripts on profile switch
-8. **Windows Support** — Native Windows symlink handling
+
 
 ## Development Roadmap
 
@@ -338,6 +342,6 @@ Remind user to restart Claude Code
 
 ---
 
-**Last Updated:** 2026-03-11
-**Version:** 1.0.0
+**Last Updated:** 2026-03-23
+**Version:** 1.1.0
 **Status:** Complete

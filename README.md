@@ -47,6 +47,7 @@ csp --help
 
 - Node.js >= 18.0.0
 - Unix/Linux/macOS (uses symlinks and POSIX tools)
+- Windows 10+ (uses junctions — no admin required)
 
 ## Quick Start
 
@@ -416,6 +417,38 @@ File differences:
 - Lists file presence and content differences
 - Shows which files differ and in which profile they exist
 
+---
+
+### launch (la)
+
+Switch to a profile and immediately launch Claude Code. All extra arguments are forwarded to `claude`.
+
+```bash
+csp launch <name> [claude-args...]
+csp la <name> [claude-args...]
+```
+
+**Examples:**
+
+Switch and launch Claude:
+```bash
+csp launch work
+```
+
+Launch with flags:
+```bash
+csp launch work --dangerously-skip-permissions
+csp la dev --model opus
+```
+
+**Behavior:**
+1. Calls `csp use <name>` internally (saves current profile, switches)
+2. Spawns `claude` process with all extra arguments
+3. Inherits stdin/stdout/stderr for interactive use
+4. Forwards Claude's exit code
+
+---
+
 ### uninstall
 
 Remove all profiles and restore Claude Code to its pre-CSP state.
@@ -572,6 +605,17 @@ When switching profiles, CSP detects if Claude Code is running:
 ```
 
 **Important:** Changes only take effect after restarting Claude Code.
+
+### Windows Support
+
+On Windows, CSP uses NTFS **junctions** instead of symlinks. Junctions:
+- Do not require Administrator or Developer Mode
+- Work transparently for all directory-type items (rules, agents, skills, hooks)
+- Work for file-type items (CLAUDE.md, statusline.cjs, .luna.json) as well
+
+Process detection uses `tasklist` instead of `pgrep` on Windows.
+
+Export/import commands use the built-in `tar.exe` available on Windows 10+.
 
 ### Validation
 
@@ -781,8 +825,11 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and migration guidance.
 │   │   ├── delete.js
 │   │   ├── export.js
 │   │   ├── import.js
-│   │   └── diff.js
+│   │   ├── diff.js
+│   │   ├── launch.js
+│   │   └── uninstall.js
 │   ├── constants.js              # Configuration constants
+│   ├── platform.js               # Cross-platform compatibility
 │   ├── profile-store.js          # Profile metadata management
 │   ├── symlink-manager.js        # Symlink operations
 │   ├── file-operations.js        # File copy/restore operations

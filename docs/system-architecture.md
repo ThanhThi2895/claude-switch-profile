@@ -14,7 +14,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                   Commands Layer (src/commands/)             │
-│  init  current  list  create  save  use  delete  export  import  diff
+│  init  current  list  create  save  use  delete  export  import  diff  launch  uninstall
 └────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────┴────────────────────────────────────────┐
@@ -28,6 +28,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 ├──────────────────────────────────────────────────────────────┤
 │  constants.js         │  Configuration & paths               │
 │  output-helpers.js    │  Console formatting                  │
+│  platform.js          │  Cross-platform compatibility        │
 └────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────┴────────────────────────────────────────┐
@@ -47,7 +48,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 **Responsibilities:**
 - Load package.json for version
 - Create Commander.js program
-- Register all 9 commands with their options
+- Register all 12 commands with their options
 - Parse command line arguments
 - Invoke appropriate command handler
 
@@ -65,6 +66,8 @@ program.command('delete')       // Delete profile
 program.command('export')       // Export to archive
 program.command('import')       // Import from archive
 program.command('diff')         // Compare profiles
+program.command('launch')       // Switch + launch Claude
+program.command('uninstall')    // Remove CSP completely
 ```
 
 ---
@@ -148,6 +151,27 @@ Each command file exports a single async function matching the command name.
 3. Compare source.json (symlink targets)
 4. Compare file presence and content
 5. Display formatted differences
+
+#### launch.js
+**Flow:**
+1. Validate profile exists
+2. Call `useCommand()` internally (saves + switches)
+3. Spawn `claude` process with forwarded arguments
+4. Use `claude.cmd` on Windows, `claude` on Unix
+5. Inherit stdio for interactive use
+6. Forward Claude's exit code
+
+#### uninstall.js
+**Flow:**
+1. Check if profiles directory exists
+2. Show summary of what will happen
+3. Prompt for confirmation (unless `--force`)
+4. Warn if Claude is running
+5. Acquire lock, create final backup
+6. Remove all managed items from `~/.claude`
+7. Restore chosen profile (active or `--profile`)
+8. Release lock, delete `~/.claude-profiles/` entirely
+9. Print npm uninstall reminder
 
 ---
 
@@ -284,11 +308,13 @@ createBackup()               // Create timestamped backup of managed items
   - Timestamp format: ISO string with colons replaced by hyphens
   - Saves source.json + all COPY_ITEMS + all COPY_DIRS
   - Called before destructive operations
-  - Kept indefinitely (user responsibility for cleanup)
+  - Pruned to MAX_BACKUPS (2) most recent
 
 - **Process Detection:**
-  - Uses `pgrep -f "claude"` to find Claude process
-  - Gracefully handles systems without pgrep
+  - Uses `findProcess('claude')` from platform.js (cross-platform)
+  - Windows: `tasklist` command
+  - Unix: `pgrep` command
+  - Gracefully handles systems without these tools
   - Warns user to restart Claude after switching
 
 ---
@@ -309,6 +335,7 @@ LOCK_FILE               // ".lock" operational lock
 BACKUP_DIR              // ".backup" timestamped backups
 
 SYMLINK_ITEMS           // Items managed via symlinks
+SYMLINK_DIRS            // Directory-type items: rules, agents, skills, hooks
 COPY_ITEMS              // Files managed via copy
 COPY_DIRS               // Directories managed via copy
 NEVER_TOUCH             // Items never managed
@@ -340,6 +367,25 @@ table(rows)      // Formatted table output
 - Unicode symbols (✓, ⚠, ✗, ℹ) for visual distinction
 - Dim text for secondary information
 - Bold text for important information
+
+---
+
+#### platform.js
+
+**Purpose:** Cross-platform compatibility layer for Windows and Unix
+
+**Functions:**
+```javascript
+isWindows                      // Boolean: process.platform === 'win32'
+symlinkType(targetPath)        // 'junction' on Windows, undefined on Unix
+findProcess(name)              // Cross-platform process detection
+```
+
+**Key Behaviors:**
+- On Windows: uses NTFS junctions for all symlinks (no admin required)
+- On Windows: uses `tasklist /FI` for process detection
+- On Unix: uses `pgrep -x` for process detection
+- Gracefully handles missing tools (returns false on error)
 
 ---
 
@@ -522,13 +568,15 @@ releaseLock() (in finally block)
 
 **Claude Process Detection:**
 ```
-pgrep -f "claude"
-  ↓
-Returns PIDs if found
-  ↓
-Print warning to user
-  ↓
-User must manually restart Claude Code
+Platform detection via platform.js:
+  - Unix: pgrep -x "claude"
+  - Windows: tasklist /FI "IMAGENAME eq claude.exe" /NH
+    ↓
+  Returns true/false
+    ↓
+  Print warning to user
+    ↓
+  User must manually restart Claude Code
 ```
 
 ### Archive Operations (export/import)
@@ -697,5 +745,5 @@ To add protected items (never managed):
 
 ---
 
-**Last Updated:** 2026-03-11
-**Version:** 1.0.0
+**Last Updated:** 2026-03-23
+**Version:** 1.1.0

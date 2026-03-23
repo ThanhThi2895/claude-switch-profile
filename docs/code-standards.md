@@ -23,14 +23,17 @@ claude-switch-profile/
 │   │   ├── delete.js
 │   │   ├── export.js
 │   │   ├── import.js
-│   │   └── diff.js
+│   │   ├── diff.js
+│   │   ├── launch.js
+│   │   └── uninstall.js
 │   ├── constants.js            # Configuration & paths
 │   ├── profile-store.js        # Metadata management
 │   ├── symlink-manager.js      # Symlink operations
 │   ├── file-operations.js      # File/dir copy/restore
 │   ├── profile-validator.js    # Validation logic
 │   ├── safety.js               # Locks, backups, detection
-│   └── output-helpers.js       # Console formatting
+│   ├── output-helpers.js       # Console formatting
+│   └── platform.js               # Cross-platform compatibility
 ├── tests/
 │   ├── core-library.test.js    # Unit tests
 │   ├── cli-integration.test.js # Integration tests
@@ -731,7 +734,7 @@ if (!profileExists(name)) {
 
 **Built-in Node.js only:**
 - `fs`, `path`, `os`
-- `child_process` (execSync for tar)
+- `child_process` (execSync for tar, execFileSync for process detection, spawn for launch)
 - `readline` (for prompts)
 
 ### Adding New Dependencies
