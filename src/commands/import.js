@@ -27,7 +27,11 @@ export const importCommand = (file, options) => {
   try {
     execFileSync('tar', ['-xzf', filePath, '-C', profileDir], { stdio: 'pipe' });
   } catch (err) {
-    error(`Failed to extract: ${err.message}`);
+    if (err.code === 'ENOENT') {
+      error('tar command not found. On Windows, tar is available on Windows 10+.');
+    } else {
+      error(`Failed to extract: ${err.message}`);
+    }
     process.exit(1);
   }
 

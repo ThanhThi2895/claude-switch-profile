@@ -18,7 +18,11 @@ export const exportCommand = (name, options) => {
     execFileSync('tar', ['-czf', outputPath, '-C', profileDir, '.'], { stdio: 'pipe' });
     success(`Profile "${name}" exported to ${outputPath}`);
   } catch (err) {
-    error(`Failed to export: ${err.message}`);
+    if (err.code === 'ENOENT') {
+      error('tar command not found. On Windows, tar is available on Windows 10+.');
+    } else {
+      error(`Failed to export: ${err.message}`);
+    }
     process.exit(1);
   }
 };

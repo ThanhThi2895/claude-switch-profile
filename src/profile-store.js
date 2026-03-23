@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROFILES_DIR, ACTIVE_FILE, PROFILES_META } from './constants.js';
 
@@ -28,6 +28,15 @@ export const getActive = () => {
 export const setActive = (name) => {
   ensureProfilesDir();
   writeFileSync(join(PROFILES_DIR, ACTIVE_FILE), name + '\n');
+};
+
+export const clearActive = () => {
+  const activePath = join(PROFILES_DIR, ACTIVE_FILE);
+  try {
+    if (existsSync(activePath)) unlinkSync(activePath);
+  } catch {
+    // Best effort
+  }
 };
 
 export const addProfile = (name, metadata = {}) => {

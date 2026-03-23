@@ -1,8 +1,8 @@
 import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, cpSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { PROFILES_DIR, LOCK_FILE, BACKUP_DIR, CLAUDE_DIR, COPY_ITEMS, COPY_DIRS } from './constants.js';
 import { readCurrentSymlinks } from './symlink-manager.js';
+import { findProcess } from './platform.js';
 import { warn } from './output-helpers.js';
 
 const MAX_BACKUPS = 2;
@@ -61,14 +61,9 @@ const isProcessRunning = (pid) => {
   }
 };
 
-// Check if claude process is running
+// Check if claude process is running (cross-platform)
 export const isClaudeRunning = () => {
-  try {
-    const result = execFileSync('pgrep', ['-x', 'claude'], { encoding: 'utf-8' });
-    return result.trim().length > 0;
-  } catch {
-    return false;
-  }
+  return findProcess('claude');
 };
 
 // Print warning if Claude is detected running

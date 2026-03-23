@@ -1,8 +1,8 @@
-import { mkdirSync, cpSync, existsSync, statSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs';
+import { mkdirSync, cpSync, existsSync, statSync, writeFileSync, copyFileSync, readdirSync, lstatSync, readlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addProfile, getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveFiles } from '../file-operations.js';
-import { CLAUDE_DIR, SYMLINK_ITEMS, SYMLINK_DIRS, SOURCE_FILE } from '../constants.js';
+import { saveFiles, updateSettingsPaths } from '../file-operations.js';
+import { CLAUDE_DIR, SYMLINK_ITEMS, SYMLINK_DIRS, SOURCE_FILE, NEVER_CLONE } from '../constants.js';
 import { success, error, info, warn } from '../output-helpers.js';
 
 export const createCommand = (name, options) => {
@@ -68,26 +68,43 @@ export const createCommand = (name, options) => {
     // Also copy current mutable files
     saveFiles(profileDir);
   } else {
-    // Create new independent profile — inherit infrastructure from current state
+    // Create new profile — full clone of ~/.claude/ (blacklist approach)
     mkdirSync(profileDir, { recursive: true });
 
-    // Copy all current symlink items (dirs + files) into profile — dereference symlinks
     const sourceMap = {};
-    for (const item of SYMLINK_ITEMS) {
-      const src = join(CLAUDE_DIR, item);
-      const dest = join(profileDir, item);
+    let entries;
+    try {
+      entries = readdirSync(CLAUDE_DIR);
+    } catch {
+      entries = [];
+    }
+
+    for (const entry of entries) {
+      if (NEVER_CLONE.includes(entry)) continue;
+
+      const src = join(CLAUDE_DIR, entry);
       try {
-        if (!existsSync(src)) continue;
-        if (statSync(src).isDirectory()) {
-          cpSync(src, dest, { recursive: true, dereference: true });
-        } else {
+        const stat = lstatSync(src);
+
+        if (stat.isSymbolicLink()) {
+          // Preserve original symlink target
+          sourceMap[entry] = resolve(CLAUDE_DIR, readlinkSync(src));
+        } else if (stat.isDirectory()) {
+          const dest = join(profileDir, entry);
+          cpSync(src, dest, { recursive: true });
+          sourceMap[entry] = dest;
+        } else if (stat.isFile()) {
+          const dest = join(profileDir, entry);
           copyFileSync(src, dest);
+          // Only record in sourceMap if it's a symlink-managed item
+          if (SYMLINK_ITEMS.includes(entry)) {
+            sourceMap[entry] = dest;
+          }
         }
-        sourceMap[item] = dest;
       } catch { /* skip unreadable items */ }
     }
 
-    // Fallback: ensure empty dirs for any missing SYMLINK_DIRS
+    // Ensure empty dirs for any missing SYMLINK_DIRS
     for (const item of SYMLINK_DIRS) {
       if (!sourceMap[item]) {
         const itemDir = join(profileDir, item);
@@ -98,18 +115,10 @@ export const createCommand = (name, options) => {
 
     writeFileSync(join(profileDir, SOURCE_FILE), JSON.stringify(sourceMap, null, 2) + '\n');
 
-    // Copy hooks config from settings.json (hooks won't run without it)
-    const settingsPath = join(CLAUDE_DIR, 'settings.json');
-    if (existsSync(settingsPath)) {
-      try {
-        const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-        if (settings.hooks) {
-          writeFileSync(join(profileDir, 'settings.json'), JSON.stringify({ hooks: settings.hooks }, null, 2) + '\n');
-        }
-      } catch { /* parse error — skip */ }
-    }
+    // Update absolute paths in settings.json
+    updateSettingsPaths(profileDir, 'save');
 
-    info('Created new independent profile (infrastructure inherited)');
+    info('Created new profile (full clone of current state)');
   }
 
   addProfile(name, { description: options.description || '' });
@@ -122,3 +131,4 @@ export const createCommand = (name, options) => {
 
   success(`Profile "${name}" created at ${profileDir}`);
 };
+

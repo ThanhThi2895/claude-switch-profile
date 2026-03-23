@@ -21,6 +21,8 @@ export const SYMLINK_ITEMS = [
   'skills',
   'hooks',
   'statusline.cjs',
+  'statusline.sh',
+  'statusline.ps1',
   '.luna.json',
 ];
 
@@ -33,34 +35,53 @@ export const COPY_ITEMS = [
   '.env',
   '.ck.json',
   '.ckignore',
+  '.mcp.json',
+  '.mcp.json.example',
+  '.env.example',
+  '.gitignore',
 ];
 
 // Directories managed via copy
 export const COPY_DIRS = [
   'commands',
   'plugins',
+  'workflows',
+  'scripts',
+  'output-styles',
+  'schemas',
 ];
 
-// Never touch these — runtime/session data
-export const NEVER_TOUCH = [
+// Items to NEVER clone (runtime/cache/tracking)
+export const NEVER_CLONE = [
   '.credentials.json',
   'projects',
-  'backups',
-  'cache',
-  'debug',
-  'telemetry',
-  'shell-snapshots',
-  'paste-cache',
-  'file-history',
-  'ide',
+  'sessions',
   'session-env',
+  'ide',
+  'cache',
+  'paste-cache',
+  'downloads',
+  'stats-cache.json',
+  'active-plan',
+  'history.jsonl',
+  'metadata.json',
+  'telemetry',
+  'debug',
+  'statsig',
+  'backups',
+  'command-archive',
+  'commands-archived',
   'todos',
   'tasks',
   'teams',
   'agent-memory',
-  'history.jsonl',
   'plans',
+  'file-history',
+  'shell-snapshots',
 ];
+
+// Never touch these — runtime/session data (same scope as NEVER_CLONE)
+export const NEVER_TOUCH = [...NEVER_CLONE];
 
 // All managed items (symlinks + copies + copy dirs)
 export const ALL_MANAGED = [...SYMLINK_ITEMS, ...COPY_ITEMS, ...COPY_DIRS];

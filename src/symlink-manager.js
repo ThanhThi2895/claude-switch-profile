@@ -1,6 +1,7 @@
 import { existsSync, readlinkSync, symlinkSync, unlinkSync, lstatSync, readFileSync, writeFileSync, cpSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { CLAUDE_DIR, SYMLINK_ITEMS, SOURCE_FILE } from './constants.js';
+import { symlinkType } from './platform.js';
 
 // Read current symlink targets from ~/.claude for all SYMLINK_ITEMS
 export const readCurrentSymlinks = () => {
@@ -55,7 +56,7 @@ export const createSymlinks = (sourceMap) => {
 
     // Only create if target exists
     if (existsSync(target)) {
-      symlinkSync(target, itemPath);
+      symlinkSync(target, itemPath, symlinkType(target));
     }
   }
 };
@@ -81,7 +82,7 @@ export const saveSymlinks = (profileDir) => {
         const dest = join(profileDir, item);
         cpSync(itemPath, dest, { recursive: true });
         rmSync(itemPath, { recursive: true });
-        symlinkSync(dest, itemPath);
+        symlinkSync(dest, itemPath, symlinkType(dest));
         sourceMap[item] = dest;
       }
     } catch {
