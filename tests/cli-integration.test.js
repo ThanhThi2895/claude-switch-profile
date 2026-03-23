@@ -60,7 +60,7 @@ describe('CLI Integration', () => {
     assert.ok(output.includes('No profiles found'));
   });
 
-  it('create produces a clean profile (no inherited files)', () => {
+  it('create produces a full clone profile (inherits current state)', () => {
     const output = run('create testprofile -d "Test profile"', envOverrides);
     assert.ok(output.includes('testprofile'));
 
@@ -68,8 +68,8 @@ describe('CLI Integration', () => {
     assert.ok(existsSync(join(profilesDir, 'testprofile')));
     assert.ok(existsSync(join(profilesDir, 'testprofile', 'source.json')));
 
-    // New profiles must NOT inherit mutable files from current state
-    assert.equal(existsSync(join(profilesDir, 'testprofile', 'settings.json')), false);
+    // Full clone now copies mutable files from current state
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'settings.json')), true);
 
     // Verify profiles.json was updated
     const profiles = JSON.parse(readFileSync(join(profilesDir, 'profiles.json'), 'utf-8'));
@@ -120,7 +120,7 @@ describe('CLI Integration', () => {
     assert.equal(origSettings, cloneSettings);
   });
 
-  it('delete removes profile with --force', () => {
+  it('delete removes non-active profile with --force', () => {
     run('create todelete', envOverrides);
     run('create keeper', envOverrides);
     // Switch to keeper so todelete is not active
@@ -130,6 +130,50 @@ describe('CLI Integration', () => {
     assert.equal(existsSync(join(profilesDir, 'todelete')), false);
     const profiles = JSON.parse(readFileSync(join(profilesDir, 'profiles.json'), 'utf-8'));
     assert.equal(profiles['todelete'], undefined);
+  });
+
+  it('delete active profile succeeds, clears marker, and NEVER touches claude dir', () => {
+    run('create onlyone', envOverrides);
+    // onlyone is the active profile (first created = auto-active)
+    const beforeOutput = run('current', envOverrides);
+    assert.ok(beforeOutput.includes('onlyone'));
+
+    // Ensure claude dir has files before delete
+    assert.ok(existsSync(join(claudeDir, 'settings.json')));
+
+    run('delete onlyone --force', envOverrides);
+
+    assert.equal(existsSync(join(profilesDir, 'onlyone')), false);
+    // Active marker should be cleared
+    const afterOutput = run('current', envOverrides);
+    assert.ok(afterOutput.includes('No active profile'));
+
+    // CRITICAL: ~/.claude files must NOT be touched by delete
+    assert.ok(existsSync(join(claudeDir, 'settings.json')), 'settings.json must survive delete');
+  });
+
+  it('deactivate clears active profile', () => {
+    run('create myprofile', envOverrides);
+    const beforeOutput = run('current', envOverrides);
+    assert.ok(beforeOutput.includes('myprofile'));
+
+    run('deactivate', envOverrides);
+
+    // Active marker should be cleared
+    const afterOutput = run('current', envOverrides);
+    assert.ok(afterOutput.includes('No active profile'));
+
+    // Profile should still exist
+    assert.ok(existsSync(join(profilesDir, 'myprofile')));
+  });
+
+  it('use does not create .backup directory', () => {
+    run('create profA', envOverrides);
+    run('create profB', envOverrides);
+    run('use profB --no-save', envOverrides);
+
+    // No .backup should be created
+    assert.equal(existsSync(join(profilesDir, '.backup')), false);
   });
 
   it('export creates tar.gz and import restores it', () => {
