@@ -1,6 +1,6 @@
 import { getActive, profileExists, getProfileDir } from '../profile-store.js';
 import { saveSymlinks } from '../symlink-manager.js';
-import { saveFiles } from '../file-operations.js';
+import { saveFiles, updateSettingsPaths } from '../file-operations.js';
 import { success, error } from '../output-helpers.js';
 
 export const saveCommand = () => {
@@ -18,5 +18,6 @@ export const saveCommand = () => {
   const profileDir = getProfileDir(active);
   saveSymlinks(profileDir);
   saveFiles(profileDir);
+  updateSettingsPaths(profileDir, 'save');
   success(`Saved current state to profile "${active}"`);
 };

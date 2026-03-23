@@ -1,12 +1,12 @@
 import { getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveSymlinks, removeSymlinks, restoreSymlinks, createSymlinks } from '../symlink-manager.js';
-import { saveFiles, removeFiles, restoreFiles } from '../file-operations.js';
+import { saveSymlinks, removeSymlinks, restoreSymlinks } from '../symlink-manager.js';
+import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths } from '../file-operations.js';
 import { validateProfile, validateSourceTargets } from '../profile-validator.js';
-import { withLock, warnIfClaudeRunning, createBackup } from '../safety.js';
+import { withLock, warnIfClaudeRunning } from '../safety.js';
 import { success, error, info, warn } from '../output-helpers.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { SOURCE_FILE } from '../constants.js';
+import { SOURCE_FILE, CLAUDE_DIR } from '../constants.js';
 
 export const useCommand = async (name, options) => {
   if (!profileExists(name)) {
@@ -61,39 +61,26 @@ export const useCommand = async (name, options) => {
       const activeDir = getProfileDir(active);
       saveSymlinks(activeDir);
       saveFiles(activeDir);
+      updateSettingsPaths(activeDir, 'save');
       info(`Saved current state to "${active}"`);
     }
 
-    // 2. Auto-backup
-    const backupPath = createBackup();
-    info(`Backup created at ${backupPath}`);
-
-    // 3. Remove managed items + restore target — with rollback on failure
+    // 2. Remove managed items + restore target
     removeSymlinks();
     removeFiles();
 
     try {
       restoreSymlinks(profileDir);
       restoreFiles(profileDir);
+      // Update paths in restored ~/.claude/settings.json (profileDir → CLAUDE_DIR)
+      updateSettingsPaths(CLAUDE_DIR, 'restore', profileDir);
     } catch (err) {
-      // Rollback: restore from backup
-      warn('Switch failed — rolling back from backup...');
-      try {
-        const backupSource = join(backupPath, SOURCE_FILE);
-        if (existsSync(backupSource)) {
-          const backupMap = JSON.parse(readFileSync(backupSource, 'utf-8'));
-          createSymlinks(backupMap);
-        }
-        restoreFiles(backupPath);
-        warn('Rollback complete. Previous config restored.');
-      } catch (rollbackErr) {
-        error(`Rollback also failed: ${rollbackErr.message}`);
-        error(`Manual recovery: restore from ${backupPath}`);
-      }
+      warn(`Switch failed: ${err.message}`);
+      error('Manual recovery: re-run "csp use <profile>" or restore from profile directory.');
       throw err;
     }
 
-    // 4. Update active marker
+    // 3. Update active marker
     setActive(name);
 
     success(`Switched to profile "${name}"`);

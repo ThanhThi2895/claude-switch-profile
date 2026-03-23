@@ -16,6 +16,8 @@ import { importCommand } from '../src/commands/import.js';
 import { diffCommand } from '../src/commands/diff.js';
 import { initCommand } from '../src/commands/init.js';
 import { uninstallCommand } from '../src/commands/uninstall.js';
+import { launchCommand } from '../src/commands/launch.js';
+import { deactivateCommand } from '../src/commands/deactivate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
@@ -25,7 +27,8 @@ const program = new Command();
 program
   .name('csp')
   .description('Claude Switch Profile — manage multiple Claude Code configurations')
-  .version(pkg.version);
+  .version(pkg.version)
+  .enablePositionalOptions();
 
 program
   .command('init')
@@ -88,6 +91,24 @@ program
   .command('diff <profileA> <profileB>')
   .description('Compare two profiles (use "current" for active profile)')
   .action(diffCommand);
+
+program
+  .command('deactivate')
+  .description('Deactivate the current profile (remove managed items from ~/.claude)')
+  .option('--no-save', 'Skip saving current profile before deactivating')
+  .action(deactivateCommand);
+
+program
+  .command('launch <name>')
+  .alias('la')
+  .description('Switch to a profile and launch Claude Code (extra args forwarded to claude)')
+  .allowUnknownOption(true)
+  .enablePositionalOptions(true)
+  .passThroughOptions(true)
+  .action((name, options, cmd) => {
+    const claudeArgs = cmd.args.filter((a) => a !== name);
+    launchCommand(name, claudeArgs, options);
+  });
 
 program
   .command('uninstall')
