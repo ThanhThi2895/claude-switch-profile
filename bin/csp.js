@@ -99,14 +99,16 @@ program
   .action(deactivateCommand);
 
 program
-  .command('launch <name>')
+  .command('launch <name> [args...]')
   .alias('la')
   .description('Switch to a profile and launch Claude Code (extra args forwarded to claude)')
   .allowUnknownOption(true)
   .enablePositionalOptions(true)
   .passThroughOptions(true)
-  .action((name, options, cmd) => {
-    const claudeArgs = cmd.args.filter((a) => a !== name);
+  .action((name, args, options, cmd) => {
+    // Merge explicit positional args with unknown options (e.g. --dangerously-skip-permissions)
+    const unknownOpts = cmd.args.filter((a) => a !== name && !args.includes(a));
+    const claudeArgs = [...args, ...unknownOpts];
     launchCommand(name, claudeArgs, options);
   });
 

@@ -11,7 +11,7 @@ export const deactivateCommand = async (options) => {
     return;
   }
 
-  warnIfClaudeRunning();
+  if (!options.skipClaudeCheck) warnIfClaudeRunning();
 
   await withLock(async () => {
     // Save current state before deactivating (unless --no-save)

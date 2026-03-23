@@ -3,7 +3,6 @@ import { getActive, profileExists } from '../profile-store.js';
 import { useCommand } from './use.js';
 import { deactivateCommand } from './deactivate.js';
 import { error, info, warn } from '../output-helpers.js';
-import { isWindows } from '../platform.js';
 
 export const launchCommand = async (name, claudeArgs, _options) => {
   if (!profileExists(name)) {
@@ -23,9 +22,20 @@ export const launchCommand = async (name, claudeArgs, _options) => {
 
   const child = spawn('claude', args, {
     stdio: 'inherit',
-    shell: isWindows,
+    shell: false,
     detached: false,
   });
+
+  // Forward signals to child instead of killing parent
+  const forwardSignal = (sig) => {
+    try {
+      child.kill(sig);
+    } catch {
+      // Child may have already exited
+    }
+  };
+  process.on('SIGINT', forwardSignal);
+  process.on('SIGTERM', forwardSignal);
 
   child.on('error', (err) => {
     error(`Failed to launch Claude: ${err.message}`);
@@ -35,6 +45,8 @@ export const launchCommand = async (name, claudeArgs, _options) => {
 
   // When Claude exits, restore previous profile
   child.on('exit', async (code) => {
+    process.removeListener('SIGINT', forwardSignal);
+    process.removeListener('SIGTERM', forwardSignal);
     await restorePrevious(previousProfile, name);
     process.exit(code || 0);
   });
@@ -51,11 +63,11 @@ const restorePrevious = async (previousProfile, currentProfile) => {
     if (previousProfile && profileExists(previousProfile) && previousProfile !== currentProfile) {
       // Restore previous profile
       info(`Session ended. Restoring profile "${previousProfile}"...`);
-      await useCommand(previousProfile, { save: false });
+      await useCommand(previousProfile, { save: false, skipClaudeCheck: true });
     } else if (!previousProfile) {
       // No previous profile — deactivate
       info('Session ended. Deactivating temporary profile...');
-      await deactivateCommand({ save: true });
+      await deactivateCommand({ save: true, skipClaudeCheck: true });
     } else {
       // Same profile or previous no longer exists — just save current state
       info('Session ended.');

@@ -53,7 +53,7 @@ export const useCommand = async (name, options) => {
     return;
   }
 
-  warnIfClaudeRunning();
+  if (!options.skipClaudeCheck) warnIfClaudeRunning();
 
   await withLock(async () => {
     // 1. Save current state to active profile (if any)
