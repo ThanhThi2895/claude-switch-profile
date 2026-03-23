@@ -13,8 +13,8 @@ export const SOURCE_FILE = 'source.json';
 export const LOCK_FILE = '.lock';
 export const BACKUP_DIR = '.backup';
 
-// Items managed via symlinks — these point to external dirs/files
-export const SYMLINK_ITEMS = [
+// Items managed via copy (formerly symlinks — now always copied)
+export const MANAGED_ITEMS = [
   'CLAUDE.md',
   'rules',
   'agents',
@@ -26,8 +26,8 @@ export const SYMLINK_ITEMS = [
   '.luna.json',
 ];
 
-// Directory-type symlink items (auto-created in new profiles)
-export const SYMLINK_DIRS = ['rules', 'agents', 'skills', 'hooks'];
+// Directory-type managed items (auto-created in new profiles)
+export const MANAGED_DIRS = ['rules', 'agents', 'skills', 'hooks'];
 
 // Mutable files managed via copy
 export const COPY_ITEMS = [
@@ -83,5 +83,5 @@ export const NEVER_CLONE = [
 // Never touch these — runtime/session data (same scope as NEVER_CLONE)
 export const NEVER_TOUCH = [...NEVER_CLONE];
 
-// All managed items (symlinks + copies + copy dirs)
-export const ALL_MANAGED = [...SYMLINK_ITEMS, ...COPY_ITEMS, ...COPY_DIRS];
+// All managed items (managed + copies + copy dirs)
+export const ALL_MANAGED = [...MANAGED_ITEMS, ...COPY_ITEMS, ...COPY_DIRS];

@@ -1,5 +1,5 @@
 import { getActive, clearActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveSymlinks, removeSymlinks } from '../symlink-manager.js';
+import { saveItems, removeItems } from '../item-manager.js';
 import { saveFiles, removeFiles } from '../file-operations.js';
 import { withLock, warnIfClaudeRunning } from '../safety.js';
 import { success, error, info } from '../output-helpers.js';
@@ -17,13 +17,13 @@ export const deactivateCommand = async (options) => {
     // Save current state before deactivating (unless --no-save)
     if (profileExists(active) && options.save !== false) {
       const activeDir = getProfileDir(active);
-      saveSymlinks(activeDir);
+      saveItems(activeDir);
       saveFiles(activeDir);
       info(`Saved current state to "${active}"`);
     }
 
     // Remove all managed items from ~/.claude
-    removeSymlinks();
+    removeItems();
     removeFiles();
 
     // Clear active marker

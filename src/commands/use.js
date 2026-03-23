@@ -1,12 +1,10 @@
 import { getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveSymlinks, removeSymlinks, restoreSymlinks } from '../symlink-manager.js';
+import { saveItems, removeItems, restoreItems } from '../item-manager.js';
 import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths } from '../file-operations.js';
-import { validateProfile, validateSourceTargets } from '../profile-validator.js';
+import { validateProfile } from '../profile-validator.js';
 import { withLock, warnIfClaudeRunning } from '../safety.js';
 import { success, error, info, warn } from '../output-helpers.js';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { SOURCE_FILE, CLAUDE_DIR } from '../constants.js';
+import { CLAUDE_DIR } from '../constants.js';
 
 export const useCommand = async (name, options) => {
   if (!profileExists(name)) {
@@ -30,23 +28,6 @@ export const useCommand = async (name, options) => {
     process.exit(1);
   }
 
-  // Validate symlink targets exist
-  const sourcePath = join(profileDir, SOURCE_FILE);
-  try {
-    const sourceMap = JSON.parse(readFileSync(sourcePath, 'utf-8'));
-    const targetValidation = validateSourceTargets(sourceMap);
-    if (!targetValidation.valid) {
-      warn('Some symlink targets are missing:');
-      targetValidation.errors.forEach((e) => warn(`  ${e}`));
-      if (!options.force) {
-        error('Use --force to switch anyway.');
-        process.exit(1);
-      }
-    }
-  } catch {
-    // source.json parse error — will be caught during restore
-  }
-
   if (options.dryRun) {
     info(`[Dry run] Would switch from "${active || 'none'}" to "${name}"`);
     info(`[Dry run] Profile dir: ${profileDir}`);
@@ -59,18 +40,18 @@ export const useCommand = async (name, options) => {
     // 1. Save current state to active profile (if any)
     if (active && profileExists(active) && options.save !== false) {
       const activeDir = getProfileDir(active);
-      saveSymlinks(activeDir);
+      saveItems(activeDir);
       saveFiles(activeDir);
       updateSettingsPaths(activeDir, 'save');
       info(`Saved current state to "${active}"`);
     }
 
     // 2. Remove managed items + restore target
-    removeSymlinks();
+    removeItems();
     removeFiles();
 
     try {
-      restoreSymlinks(profileDir);
+      restoreItems(profileDir);
       restoreFiles(profileDir);
       // Update paths in restored ~/.claude/settings.json (profileDir → CLAUDE_DIR)
       updateSettingsPaths(CLAUDE_DIR, 'restore', profileDir);

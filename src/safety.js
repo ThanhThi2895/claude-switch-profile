@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, cpSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROFILES_DIR, LOCK_FILE, BACKUP_DIR, CLAUDE_DIR, COPY_ITEMS, COPY_DIRS } from './constants.js';
-import { readCurrentSymlinks } from './symlink-manager.js';
+import { readCurrentItems } from './item-manager.js';
 import { findProcess } from './platform.js';
 import { warn } from './output-helpers.js';
 
@@ -81,7 +81,7 @@ export const createBackup = () => {
   mkdirSync(backupPath, { recursive: true });
 
   // Save symlink targets
-  const sourceMap = readCurrentSymlinks();
+  const sourceMap = readCurrentItems();
   writeFileSync(join(backupPath, 'source.json'), JSON.stringify(sourceMap, null, 2) + '\n');
 
   // Copy mutable files

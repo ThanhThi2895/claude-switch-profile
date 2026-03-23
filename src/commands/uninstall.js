@@ -1,7 +1,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { getActive, profileExists, getProfileDir } from '../profile-store.js';
-import { removeSymlinks, restoreSymlinks } from '../symlink-manager.js';
+import { removeItems, restoreItems } from '../item-manager.js';
 import { removeFiles, restoreFiles } from '../file-operations.js';
 import { withLock, createBackup, warnIfClaudeRunning } from '../safety.js';
 import { PROFILES_DIR } from '../constants.js';
@@ -63,13 +63,13 @@ export const uninstallCommand = async (options) => {
     const restoreProfile = options.profile || active;
 
     // 3. Remove current managed items from ~/.claude
-    removeSymlinks();
+    removeItems();
     removeFiles();
 
     // 4. Restore the chosen profile's config
     if (restoreProfile && profileExists(restoreProfile)) {
       const profileDir = getProfileDir(restoreProfile);
-      restoreSymlinks(profileDir);
+      restoreItems(profileDir);
       restoreFiles(profileDir);
       success(`Restored "${restoreProfile}" profile to ~/.claude`);
     } else {

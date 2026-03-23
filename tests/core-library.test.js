@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, lstatSync, readlinkSync, rmSync, copyFileSync, cpSync, unlinkSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync, copyFileSync, cpSync } from 'node:fs';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const createTestEnv = () => {
@@ -64,83 +64,106 @@ describe('Profile Store', () => {
   });
 });
 
-// ─── Symlink Manager ───
+// ─── Item Manager (copy-based) ───
 
-describe('Symlink Manager', () => {
+describe('Item Manager', () => {
   let env;
 
   beforeEach(() => { env = createTestEnv(); });
   afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
 
-  it('creates symlinks and reads their targets', () => {
-    const targetFile = join(env.tempDir, 'CLAUDE.md');
+  it('copies files to profile dir and reads them back', () => {
+    const targetFile = join(env.claudeDir, 'CLAUDE.md');
     writeFileSync(targetFile, '# Test');
-    const linkPath = join(env.claudeDir, 'CLAUDE.md');
-    symlinkSync(targetFile, linkPath);
 
-    assert.equal(lstatSync(linkPath).isSymbolicLink(), true);
-    assert.equal(resolve(env.claudeDir, readlinkSync(linkPath)), targetFile);
-  });
+    // Copy to profile
+    const profileDir = join(env.profilesDir, 'test');
+    mkdirSync(profileDir);
+    copyFileSync(targetFile, join(profileDir, 'CLAUDE.md'));
 
-  it('creates directory symlinks', () => {
-    const rulesDir = join(env.tempDir, 'rules');
-    mkdirSync(rulesDir);
-    writeFileSync(join(rulesDir, 'dev.md'), '# Rules');
-    symlinkSync(rulesDir, join(env.claudeDir, 'rules'));
-
-    assert.equal(lstatSync(join(env.claudeDir, 'rules')).isSymbolicLink(), true);
-    assert.equal(existsSync(join(env.claudeDir, 'rules', 'dev.md')), true);
-  });
-
-  it('removes symlinks without affecting targets', () => {
-    const targetFile = join(env.tempDir, 'CLAUDE.md');
-    writeFileSync(targetFile, '# Test');
-    const linkPath = join(env.claudeDir, 'CLAUDE.md');
-    symlinkSync(targetFile, linkPath);
-
-    // Remove symlink
-    unlinkSync(linkPath);
-    assert.equal(existsSync(linkPath), false);
-    // Target still exists
+    assert.equal(readFileSync(join(profileDir, 'CLAUDE.md'), 'utf-8'), '# Test');
+    // Original still exists
     assert.equal(existsSync(targetFile), true);
   });
 
-  it('saves and restores symlink targets via source.json', () => {
-    // Create targets
-    const targetFile = join(env.tempDir, 'CLAUDE.md');
-    writeFileSync(targetFile, '# Test');
-    const rulesDir = join(env.tempDir, 'rules');
+  it('copies directories recursively', () => {
+    const rulesDir = join(env.claudeDir, 'rules');
     mkdirSync(rulesDir);
+    writeFileSync(join(rulesDir, 'dev.md'), '# Rules');
 
-    // Create symlinks
-    symlinkSync(targetFile, join(env.claudeDir, 'CLAUDE.md'));
-    symlinkSync(rulesDir, join(env.claudeDir, 'rules'));
+    const profileDir = join(env.profilesDir, 'test');
+    mkdirSync(profileDir);
+    cpSync(rulesDir, join(profileDir, 'rules'), { recursive: true });
 
-    // Save to source.json
+    assert.equal(existsSync(join(profileDir, 'rules', 'dev.md')), true);
+    assert.equal(readFileSync(join(profileDir, 'rules', 'dev.md'), 'utf-8'), '# Rules');
+  });
+
+  it('removes items without affecting profile copies', () => {
+    const targetFile = join(env.claudeDir, 'CLAUDE.md');
+    writeFileSync(targetFile, '# Test');
+
+    // Copy to profile
+    const profileDir = join(env.profilesDir, 'test');
+    mkdirSync(profileDir);
+    copyFileSync(targetFile, join(profileDir, 'CLAUDE.md'));
+
+    // Remove from claude dir
+    rmSync(targetFile);
+    assert.equal(existsSync(targetFile), false);
+    // Profile copy still exists
+    assert.equal(existsSync(join(profileDir, 'CLAUDE.md')), true);
+  });
+
+  it('saves and restores items via source.json', () => {
+    // Create items in claude dir
+    writeFileSync(join(env.claudeDir, 'CLAUDE.md'), '# Test');
+    const rulesDir = join(env.claudeDir, 'rules');
+    mkdirSync(rulesDir);
+    writeFileSync(join(rulesDir, 'dev.md'), '# Rules');
+
+    // Save to profile
+    const profileDir = join(env.profilesDir, 'test');
+    mkdirSync(profileDir);
+
     const sourceMap = {};
     for (const item of ['CLAUDE.md', 'rules']) {
       const itemPath = join(env.claudeDir, item);
-      if (lstatSync(itemPath).isSymbolicLink()) {
-        sourceMap[item] = resolve(env.claudeDir, readlinkSync(itemPath));
+      if (existsSync(itemPath)) {
+        const dest = join(profileDir, item);
+        const stat = lstatSync(itemPath);
+        if (stat.isDirectory()) {
+          cpSync(itemPath, dest, { recursive: true });
+        } else {
+          copyFileSync(itemPath, dest);
+        }
+        sourceMap[item] = dest;
       }
     }
-    const profileDir = join(env.profilesDir, 'test');
-    mkdirSync(profileDir);
     writeFileSync(join(profileDir, 'source.json'), JSON.stringify(sourceMap, null, 2));
 
-    // Remove symlinks
-    unlinkSync(join(env.claudeDir, 'CLAUDE.md'));
-    unlinkSync(join(env.claudeDir, 'rules'));
+    // Remove from claude dir
+    rmSync(join(env.claudeDir, 'CLAUDE.md'));
+    rmSync(join(env.claudeDir, 'rules'), { recursive: true });
     assert.equal(existsSync(join(env.claudeDir, 'CLAUDE.md')), false);
 
     // Restore from source.json
     const restored = JSON.parse(readFileSync(join(profileDir, 'source.json'), 'utf-8'));
-    for (const [item, target] of Object.entries(restored)) {
-      symlinkSync(target, join(env.claudeDir, item));
+    for (const [item, srcPath] of Object.entries(restored)) {
+      const dest = join(env.claudeDir, item);
+      const stat = lstatSync(srcPath);
+      if (stat.isDirectory()) {
+        cpSync(srcPath, dest, { recursive: true });
+      } else {
+        copyFileSync(srcPath, dest);
+      }
     }
 
-    assert.equal(lstatSync(join(env.claudeDir, 'CLAUDE.md')).isSymbolicLink(), true);
-    assert.equal(resolve(env.claudeDir, readlinkSync(join(env.claudeDir, 'CLAUDE.md'))), targetFile);
+    assert.equal(readFileSync(join(env.claudeDir, 'CLAUDE.md'), 'utf-8'), '# Test');
+    assert.equal(readFileSync(join(env.claudeDir, 'rules', 'dev.md'), 'utf-8'), '# Rules');
+    // No symlinks — real files
+    assert.equal(lstatSync(join(env.claudeDir, 'CLAUDE.md')).isFile(), true);
+    assert.equal(lstatSync(join(env.claudeDir, 'rules')).isDirectory(), true);
   });
 });
 
@@ -225,14 +248,14 @@ describe('Profile Validator', () => {
     assert.equal(existsSync(join(profileDir, 'source.json')), true);
   });
 
-  it('detects invalid symlink targets', () => {
+  it('detects invalid item targets', () => {
     const sourceMap = { 'CLAUDE.md': '/nonexistent/path/CLAUDE.md' };
     for (const [, target] of Object.entries(sourceMap)) {
       assert.equal(existsSync(target), false);
     }
   });
 
-  it('validates real symlink targets', () => {
+  it('validates real item targets', () => {
     const target = join(env.tempDir, 'real-target.md');
     writeFileSync(target, '# Real');
     assert.equal(existsSync(target), true);
@@ -247,62 +270,55 @@ describe('Full Profile Switch Cycle', () => {
   beforeEach(() => { env = createTestEnv(); });
   afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
 
-  it('creates profile, switches, and restores correctly', () => {
-    // Setup: create source files for symlinks
-    const agentsSource = join(env.tempDir, 'source-a');
-    mkdirSync(agentsSource);
-    writeFileSync(join(agentsSource, 'CLAUDE.md'), '# Profile A');
-
-    // Create initial symlink
-    symlinkSync(join(agentsSource, 'CLAUDE.md'), join(env.claudeDir, 'CLAUDE.md'));
+  it('creates profile, switches, and restores correctly using copies', () => {
+    // Setup: create files in claude dir
+    writeFileSync(join(env.claudeDir, 'CLAUDE.md'), '# Profile A');
     writeFileSync(join(env.claudeDir, 'settings.json'), '{"profile":"A"}');
 
-    // "Save" profile A
+    // "Save" profile A — copy items to profile dir
     const profileADir = join(env.profilesDir, 'profileA');
     mkdirSync(profileADir);
-
-    // Save symlink targets
-    const sourceMapA = { 'CLAUDE.md': join(agentsSource, 'CLAUDE.md') };
-    writeFileSync(join(profileADir, 'source.json'), JSON.stringify(sourceMapA));
+    copyFileSync(join(env.claudeDir, 'CLAUDE.md'), join(profileADir, 'CLAUDE.md'));
     copyFileSync(join(env.claudeDir, 'settings.json'), join(profileADir, 'settings.json'));
+    const sourceMapA = { 'CLAUDE.md': join(profileADir, 'CLAUDE.md') };
+    writeFileSync(join(profileADir, 'source.json'), JSON.stringify(sourceMapA));
 
-    // Create a different source for profile B
-    const agentsSourceB = join(env.tempDir, 'source-b');
-    mkdirSync(agentsSourceB);
-    writeFileSync(join(agentsSourceB, 'CLAUDE.md'), '# Profile B');
-
+    // Create profile B with different content
     const profileBDir = join(env.profilesDir, 'profileB');
     mkdirSync(profileBDir);
-    const sourceMapB = { 'CLAUDE.md': join(agentsSourceB, 'CLAUDE.md') };
-    writeFileSync(join(profileBDir, 'source.json'), JSON.stringify(sourceMapB));
+    writeFileSync(join(profileBDir, 'CLAUDE.md'), '# Profile B');
     writeFileSync(join(profileBDir, 'settings.json'), '{"profile":"B"}');
+    const sourceMapB = { 'CLAUDE.md': join(profileBDir, 'CLAUDE.md') };
+    writeFileSync(join(profileBDir, 'source.json'), JSON.stringify(sourceMapB));
 
-    // "Switch" to profile B: remove old symlinks, restore new ones
-    unlinkSync(join(env.claudeDir, 'CLAUDE.md'));
-    unlinkSync(join(env.claudeDir, 'settings.json'));
+    // "Switch" to profile B: remove old, copy new
+    rmSync(join(env.claudeDir, 'CLAUDE.md'));
+    rmSync(join(env.claudeDir, 'settings.json'));
 
     const restoredMap = JSON.parse(readFileSync(join(profileBDir, 'source.json'), 'utf-8'));
-    for (const [item, target] of Object.entries(restoredMap)) {
-      symlinkSync(target, join(env.claudeDir, item));
+    for (const [item, srcPath] of Object.entries(restoredMap)) {
+      copyFileSync(srcPath, join(env.claudeDir, item));
     }
     copyFileSync(join(profileBDir, 'settings.json'), join(env.claudeDir, 'settings.json'));
 
-    // Verify profile B is active
+    // Verify profile B is active — real files, no symlinks
     assert.equal(readFileSync(join(env.claudeDir, 'settings.json'), 'utf-8'), '{"profile":"B"}');
-    const linkedTarget = resolve(env.claudeDir, readlinkSync(join(env.claudeDir, 'CLAUDE.md')));
-    assert.equal(linkedTarget, join(agentsSourceB, 'CLAUDE.md'));
     assert.equal(readFileSync(join(env.claudeDir, 'CLAUDE.md'), 'utf-8'), '# Profile B');
+    assert.equal(lstatSync(join(env.claudeDir, 'CLAUDE.md')).isFile(), true);
+    assert.equal(lstatSync(join(env.claudeDir, 'CLAUDE.md')).isSymbolicLink(), false);
 
     // "Switch" back to profile A
-    unlinkSync(join(env.claudeDir, 'CLAUDE.md'));
-    unlinkSync(join(env.claudeDir, 'settings.json'));
+    rmSync(join(env.claudeDir, 'CLAUDE.md'));
+    rmSync(join(env.claudeDir, 'settings.json'));
     const restoredMapA = JSON.parse(readFileSync(join(profileADir, 'source.json'), 'utf-8'));
-    for (const [item, target] of Object.entries(restoredMapA)) {
-      symlinkSync(target, join(env.claudeDir, item));
+    for (const [item, srcPath] of Object.entries(restoredMapA)) {
+      copyFileSync(srcPath, join(env.claudeDir, item));
     }
     copyFileSync(join(profileADir, 'settings.json'), join(env.claudeDir, 'settings.json'));
 
     assert.equal(readFileSync(join(env.claudeDir, 'settings.json'), 'utf-8'), '{"profile":"A"}');
     assert.equal(readFileSync(join(env.claudeDir, 'CLAUDE.md'), 'utf-8'), '# Profile A');
+    // Still real files, not symlinks
+    assert.equal(lstatSync(join(env.claudeDir, 'CLAUDE.md')).isSymbolicLink(), false);
   });
 });

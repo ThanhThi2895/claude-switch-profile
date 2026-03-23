@@ -1,17 +1,6 @@
-import { existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 export const isWindows = process.platform === 'win32';
-
-/**
- * Get symlink type for Windows compatibility.
- * On Windows: always 'junction' (no admin required).
- * On Unix: undefined (default behavior).
- */
-export const symlinkType = (_targetPath) => {
-  if (!isWindows) return undefined;
-  return 'junction';
-};
 
 /**
  * Check if a process with the given name is running.
