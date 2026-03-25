@@ -1,10 +1,10 @@
 import { getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveItems, removeItems, restoreItems } from '../item-manager.js';
-import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths } from '../file-operations.js';
+import { moveItemsToProfile, moveItemsToClaude, removeItems } from '../item-manager.js';
+import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths, moveDirsToProfile, moveDirsToClaude } from '../file-operations.js';
 import { validateProfile } from '../profile-validator.js';
 import { withLock, warnIfClaudeRunning } from '../safety.js';
 import { success, error, info, warn } from '../output-helpers.js';
-import { CLAUDE_DIR } from '../constants.js';
+import { CLAUDE_DIR, DEFAULT_PROFILE } from '../constants.js';
 
 export const useCommand = async (name, options) => {
   if (!profileExists(name)) {
@@ -20,12 +20,14 @@ export const useCommand = async (name, options) => {
 
   const profileDir = getProfileDir(name);
 
-  // Validate target profile
-  const validation = validateProfile(profileDir);
-  if (!validation.valid) {
-    error(`Profile "${name}" is invalid:`);
-    validation.errors.forEach((e) => error(`  ${e}`));
-    process.exit(1);
+  // Validate target profile (skip for default — it's a pass-through)
+  if (name !== DEFAULT_PROFILE) {
+    const validation = validateProfile(profileDir);
+    if (!validation.valid) {
+      error(`Profile "${name}" is invalid:`);
+      validation.errors.forEach((e) => error(`  ${e}`));
+      process.exit(1);
+    }
   }
 
   if (options.dryRun) {
@@ -37,34 +39,44 @@ export const useCommand = async (name, options) => {
   if (!options.skipClaudeCheck) warnIfClaudeRunning();
 
   await withLock(async () => {
-    // 1. Save current state to active profile (if any)
-    if (active && profileExists(active) && options.save !== false) {
+    // 1. Save current state (skip if from=default — ~/.claude IS default)
+    if (active && active !== DEFAULT_PROFILE && profileExists(active) && options.save !== false) {
       const activeDir = getProfileDir(active);
-      saveItems(activeDir);
+      moveItemsToProfile(activeDir);
       saveFiles(activeDir);
+      moveDirsToProfile(activeDir);
       updateSettingsPaths(activeDir, 'save');
       info(`Saved current state to "${active}"`);
     }
 
-    // 2. Remove managed items + restore target
-    removeItems();
+    // 2. Remove leftovers (safety net after move + remove COPY_ITEMS)
+    if (active !== DEFAULT_PROFILE) {
+      removeItems();
+    }
     removeFiles();
 
-    try {
-      restoreItems(profileDir);
-      restoreFiles(profileDir);
-      // Update paths in restored ~/.claude/settings.json (profileDir → CLAUDE_DIR)
-      updateSettingsPaths(CLAUDE_DIR, 'restore', profileDir);
-    } catch (err) {
-      warn(`Switch failed: ${err.message}`);
-      error('Manual recovery: re-run "csp use <profile>" or restore from profile directory.');
-      throw err;
+    // 3. Restore target (skip if to=default — ~/.claude already correct)
+    if (name !== DEFAULT_PROFILE) {
+      try {
+        moveItemsToClaude(profileDir);
+        restoreFiles(profileDir);
+        moveDirsToClaude(profileDir);
+        updateSettingsPaths(CLAUDE_DIR, 'restore', profileDir);
+      } catch (err) {
+        warn(`Switch failed: ${err.message}`);
+        error('Manual recovery: re-run "csp use <profile>" or restore from profile directory.');
+        throw err;
+      }
     }
 
-    // 3. Update active marker
+    // 4. Update active marker
     setActive(name);
 
     success(`Switched to profile "${name}"`);
-    info('Restart your Claude Code session to apply changes.');
+    if (name === DEFAULT_PROFILE) {
+      info('Using ~/.claude directly (default profile).');
+    } else {
+      info('Restart your Claude Code session to apply changes.');
+    }
   });
 };

@@ -24,6 +24,7 @@ export const initCommand = () => {
   addProfile('default', { description: 'Vanilla Claude defaults' });
   setActive('default');
 
-  success('Initialization complete. "default" profile uses vanilla Claude defaults.');
-  info('Run "csp create <name>" to capture your current setup into a profile.');
+  success('Initialization complete.');
+  info('"default" profile uses ~/.claude directly — no copy/restore needed.');
+  info('Run "csp create <name>" to capture your current setup into a new profile.');
 };

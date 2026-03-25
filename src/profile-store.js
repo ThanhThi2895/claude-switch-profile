@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROFILES_DIR, ACTIVE_FILE, PROFILES_META } from './constants.js';
+import { PROFILES_DIR, ACTIVE_FILE, PROFILES_META, CLAUDE_DIR, DEFAULT_PROFILE } from './constants.js';
 
 export const ensureProfilesDir = () => {
   if (!existsSync(PROFILES_DIR)) {
@@ -74,4 +74,14 @@ export const getProfileDir = (name) => {
 
 export const listProfileNames = () => {
   return Object.keys(readProfiles());
+};
+
+// Returns the directory containing a profile's actual files.
+// If profile is active, items were moved to CLAUDE_DIR during switch.
+// If profile is not active, items are in profileDir.
+export const getEffectiveDir = (name) => {
+  if (name === DEFAULT_PROFILE) return CLAUDE_DIR;
+  const active = getActive();
+  if (active === name) return CLAUDE_DIR;
+  return getProfileDir(name);
 };

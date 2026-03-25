@@ -4,7 +4,7 @@ import { getActive, profileExists, getProfileDir } from '../profile-store.js';
 import { removeItems, restoreItems } from '../item-manager.js';
 import { removeFiles, restoreFiles } from '../file-operations.js';
 import { withLock, createBackup, warnIfClaudeRunning } from '../safety.js';
-import { PROFILES_DIR } from '../constants.js';
+import { PROFILES_DIR, DEFAULT_PROFILE } from '../constants.js';
 import { success, error, info, warn } from '../output-helpers.js';
 
 const confirm = (question) => {
@@ -31,8 +31,10 @@ export const uninstallCommand = async (options) => {
   info('This will:');
   if (options.profile && profileExists(options.profile)) {
     info(`  1. Restore profile "${options.profile}" to ~/.claude`);
-  } else if (active && profileExists(active)) {
+  } else if (active && active !== DEFAULT_PROFILE && profileExists(active)) {
     info(`  1. Restore active profile "${active}" to ~/.claude (use --profile <name> to choose)`);
+  } else if (active === DEFAULT_PROFILE) {
+    info('  1. Default profile — ~/.claude already in correct state');
   } else {
     warn('  1. No profile to restore (managed items will be removed)');
   }
@@ -62,15 +64,23 @@ export const uninstallCommand = async (options) => {
     // 2. Determine which profile to restore
     const restoreProfile = options.profile || active;
 
-    // 3. Remove current managed items from ~/.claude
-    removeItems();
-    removeFiles();
+    // 3. Remove current managed items from ~/.claude (skip for default — items live there)
+    if (restoreProfile !== DEFAULT_PROFILE) {
+      removeItems();
+      removeFiles();
+    }
 
     // 4. Restore the chosen profile's config
-    if (restoreProfile && profileExists(restoreProfile)) {
+    if (restoreProfile === DEFAULT_PROFILE) {
+      info('Default profile — ~/.claude already in correct state.');
+    } else if (restoreProfile && profileExists(restoreProfile)) {
       const profileDir = getProfileDir(restoreProfile);
-      restoreItems(profileDir);
-      restoreFiles(profileDir);
+      // If restoring the active profile: items already in ~/.claude (moved there on switch)
+      // If restoring a different profile: need to restore from profileDir
+      if (restoreProfile !== active) {
+        restoreItems(profileDir);
+        restoreFiles(profileDir);
+      }
       success(`Restored "${restoreProfile}" profile to ~/.claude`);
     } else {
       warn('No profile restored. ~/.claude managed items have been cleared.');

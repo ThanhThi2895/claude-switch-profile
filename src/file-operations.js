@@ -1,6 +1,19 @@
-import { existsSync, copyFileSync, cpSync, unlinkSync, rmSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, copyFileSync, cpSync, unlinkSync, rmSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { CLAUDE_DIR, COPY_ITEMS, COPY_DIRS } from './constants.js';
+
+// Rename-based dir move with EXDEV fallback
+const moveDir = (src, dest) => {
+  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+  try {
+    renameSync(src, dest);
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      cpSync(src, dest, { recursive: true });
+      rmSync(src, { recursive: true, force: true });
+    } else throw err;
+  }
+};
 
 // Copy COPY_ITEMS files + COPY_DIRS dirs from ~/.claude to profileDir
 export const saveFiles = (profileDir) => {
@@ -59,6 +72,28 @@ export const removeFiles = () => {
       if (existsSync(dirPath)) rmSync(dirPath, { recursive: true, force: true });
     } catch {
       // Skip
+    }
+  }
+};
+
+// Move COPY_DIRS from ~/.claude → profileDir (destructive, for use command)
+// COPY_ITEMS always copied (tiny files, not worth move complexity)
+export const moveDirsToProfile = (profileDir) => {
+  mkdirSync(profileDir, { recursive: true });
+  for (const dir of COPY_DIRS) {
+    const src = join(CLAUDE_DIR, dir);
+    if (existsSync(src)) {
+      moveDir(src, join(profileDir, dir));
+    }
+  }
+};
+
+// Move COPY_DIRS from profileDir → ~/.claude (destructive, for use command)
+export const moveDirsToClaude = (profileDir) => {
+  for (const dir of COPY_DIRS) {
+    const src = join(profileDir, dir);
+    if (existsSync(src)) {
+      moveDir(src, join(CLAUDE_DIR, dir));
     }
   }
 };

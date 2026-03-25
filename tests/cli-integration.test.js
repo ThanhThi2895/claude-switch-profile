@@ -188,4 +188,100 @@ describe('CLI Integration', () => {
     assert.ok(existsSync(join(profilesDir, 'imported')));
     assert.ok(existsSync(join(profilesDir, 'imported', 'source.json')));
   });
+
+  // ─── Default Profile Pass-Through ───
+
+  it('init creates default profile and sets it active', () => {
+    run('init', envOverrides);
+    const output = run('current', envOverrides);
+    assert.ok(output.includes('default'));
+    assert.ok(existsSync(join(profilesDir, 'default')));
+  });
+
+  it('use default from non-default skips restore', () => {
+    run('init', envOverrides);
+    // Create and switch to a work profile with content
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work rules');
+    run('create work -d "Work"', envOverrides);
+    run('use work --no-save', envOverrides);
+
+    // Switch back to default
+    const output = run('use default', envOverrides);
+    assert.ok(output.includes('default'));
+
+    // Active should be default
+    const current = run('current', envOverrides);
+    assert.ok(current.includes('default'));
+  });
+
+  it('use X from default skips save', () => {
+    run('init', envOverrides);
+    // Create work profile with content
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work');
+    run('create work -d "Work"', envOverrides);
+
+    // Switch to work from default — should not try to save default
+    const output = run('use work', envOverrides);
+    assert.ok(output.includes('work'));
+  });
+
+  it('save on default is no-op', () => {
+    run('init', envOverrides);
+    const output = run('save', envOverrides);
+    assert.ok(output.includes('No save needed') || output.includes('directly'));
+  });
+
+  it('deactivate on default is no-op', () => {
+    run('init', envOverrides);
+    const output = run('deactivate', envOverrides);
+    assert.ok(output.includes('Nothing to deactivate') || output.includes('directly'));
+  });
+
+  it('delete default is blocked', () => {
+    run('init', envOverrides);
+    const output = run('delete default --force', envOverrides);
+    assert.ok(output.includes('Cannot delete'));
+  });
+
+  // ─── Move Semantics (use command) ───
+
+  it('use moves items between profiles via rename', () => {
+    run('init', envOverrides);
+
+    // Create two profiles with different content
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Alpha');
+    run('create alpha -d "Alpha"', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Beta');
+    run('create beta -d "Beta"', envOverrides);
+
+    // Switch from beta to alpha — should move items
+    run('use alpha', envOverrides);
+
+    // Alpha's content should be in ~/.claude
+    const content = readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8');
+    assert.equal(content, '# Alpha');
+  });
+
+  it('switch between non-default profiles preserves state', () => {
+    run('init', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# First');
+    run('create first -d "First"', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Second');
+    run('create second -d "Second"', envOverrides);
+
+    // Switch to first
+    run('use first', envOverrides);
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# First');
+
+    // Switch back to second — first should be saved
+    run('use second', envOverrides);
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Second');
+
+    // Switch to first again to verify it was preserved
+    run('use first', envOverrides);
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# First');
+  });
 });

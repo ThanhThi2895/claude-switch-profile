@@ -3,11 +3,17 @@ import { saveItems, removeItems } from '../item-manager.js';
 import { saveFiles, removeFiles } from '../file-operations.js';
 import { withLock, warnIfClaudeRunning } from '../safety.js';
 import { success, error, info } from '../output-helpers.js';
+import { DEFAULT_PROFILE } from '../constants.js';
 
 export const deactivateCommand = async (options) => {
   const active = getActive();
   if (!active) {
     info('No active profile to deactivate.');
+    return;
+  }
+
+  if (active === DEFAULT_PROFILE) {
+    info('Default profile uses ~/.claude directly. Nothing to deactivate.');
     return;
   }
 

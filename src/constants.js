@@ -12,6 +12,7 @@ export const PROFILES_META = 'profiles.json';
 export const SOURCE_FILE = 'source.json';
 export const LOCK_FILE = '.lock';
 export const BACKUP_DIR = '.backup';
+export const DEFAULT_PROFILE = 'default';
 
 // Items managed via copy (formerly symlinks — now always copied)
 export const MANAGED_ITEMS = [

@@ -2,6 +2,7 @@ import { rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { getActive, clearActive, removeProfile, profileExists, getProfileDir } from '../profile-store.js';
 import { success, error, warn, info } from '../output-helpers.js';
+import { DEFAULT_PROFILE } from '../constants.js';
 
 const confirm = (question) => {
   return new Promise((resolve) => {
@@ -14,6 +15,11 @@ const confirm = (question) => {
 };
 
 export const deleteCommand = async (name, options) => {
+  if (name === DEFAULT_PROFILE) {
+    error('Cannot delete the default profile.');
+    process.exit(1);
+  }
+
   if (!profileExists(name)) {
     error(`Profile "${name}" does not exist.`);
     process.exit(1);

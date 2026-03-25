@@ -1,6 +1,23 @@
-import { existsSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, lstatSync, copyFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, lstatSync, copyFileSync, renameSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import { CLAUDE_DIR, MANAGED_ITEMS, SOURCE_FILE } from './constants.js';
+
+const SKIP_PATTERNS = ['.venv', 'node_modules', '__pycache__', '.git'];
+const skipHeavyDirs = (src) => !SKIP_PATTERNS.includes(basename(src));
+
+// Rename-based move with EXDEV fallback (filtered copy + delete)
+const moveItem = (src, dest) => {
+  mkdirSync(dirname(dest), { recursive: true });
+  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+  try {
+    renameSync(src, dest);
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      cpSync(src, dest, { recursive: true, filter: skipHeavyDirs });
+      rmSync(src, { recursive: true, force: true });
+    } else throw err;
+  }
+};
 
 // Read current managed items from ~/.claude — returns map of {item: claudeDir/item}
 export const readCurrentItems = () => {
@@ -32,8 +49,8 @@ export const removeItems = () => {
   }
 };
 
-// Copy managed items from ~/.claude into profileDir, write source.json manifest
-export const saveItems = (profileDir) => {
+// Copy managed items from ~/.claude into profileDir, write source.json manifest (non-destructive)
+export const copyItems = (profileDir) => {
   const sourceMap = {};
   for (const item of MANAGED_ITEMS) {
     const itemPath = join(CLAUDE_DIR, item);
@@ -58,7 +75,10 @@ export const saveItems = (profileDir) => {
   return sourceMap;
 };
 
-// Read source.json from profileDir and copy items into ~/.claude
+// Backward-compatible alias for save.js
+export const saveItems = copyItems;
+
+// Read source.json from profileDir and copy items into ~/.claude (non-destructive)
 export const restoreItems = (profileDir) => {
   const sourcePath = join(profileDir, SOURCE_FILE);
   if (!existsSync(sourcePath)) return {};
@@ -70,7 +90,6 @@ export const restoreItems = (profileDir) => {
 
     const dest = join(CLAUDE_DIR, item);
 
-    // Remove existing item in ~/.claude
     try {
       if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
     } catch {
@@ -92,5 +111,45 @@ export const restoreItems = (profileDir) => {
     }
   }
 
+  return sourceMap;
+};
+
+// Move items from ~/.claude → profileDir (destructive — items leave ~/.claude)
+export const moveItemsToProfile = (profileDir) => {
+  mkdirSync(profileDir, { recursive: true });
+  const sourceMap = {};
+  for (const item of MANAGED_ITEMS) {
+    const itemPath = join(CLAUDE_DIR, item);
+    if (!existsSync(itemPath)) continue;
+    try {
+      const dest = join(profileDir, item);
+      moveItem(itemPath, dest);
+      sourceMap[item] = dest;
+    } catch {
+      // skip
+    }
+  }
+  writeFileSync(join(profileDir, SOURCE_FILE), JSON.stringify(sourceMap, null, 2) + '\n');
+  return sourceMap;
+};
+
+// Move items from profileDir → ~/.claude (destructive — items leave profileDir)
+export const moveItemsToClaude = (profileDir) => {
+  const sourcePath = join(profileDir, SOURCE_FILE);
+  if (!existsSync(sourcePath)) return {};
+  const sourceMap = JSON.parse(readFileSync(sourcePath, 'utf-8'));
+
+  for (const [item] of Object.entries(sourceMap)) {
+    if (!MANAGED_ITEMS.includes(item)) continue;
+    const src = join(profileDir, item);
+    const dest = join(CLAUDE_DIR, item);
+    if (!existsSync(src)) continue;
+    try {
+      if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+      moveItem(src, dest);
+    } catch {
+      // skip
+    }
+  }
   return sourceMap;
 };

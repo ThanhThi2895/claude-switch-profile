@@ -101,7 +101,7 @@ program
 program
   .command('launch <name> [args...]')
   .alias('la')
-  .description('Switch to a profile and launch Claude Code (extra args forwarded to claude)')
+  .description('Switch to a profile and launch Claude Code (profile stays active after exit)')
   .allowUnknownOption(true)
   .enablePositionalOptions(true)
   .passThroughOptions(true)
