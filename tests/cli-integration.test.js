@@ -198,12 +198,17 @@ describe('CLI Integration', () => {
     assert.ok(existsSync(join(profilesDir, 'default')));
   });
 
-  it('use default from non-default skips restore', () => {
+  it('use default from non-default keeps ~/.claude unchanged and snapshots active profile', () => {
     run('init', envOverrides);
-    // Create and switch to a work profile with content
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work rules');
     run('create work -d "Work"', envOverrides);
     run('use work --no-save', envOverrides);
+
+    // Simulate live non-default state
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live rules');
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"sonnet"}');
+
+    const beforeClaude = readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8');
+    const beforeSettings = readFileSync(join(claudeDir, 'settings.json'), 'utf-8');
 
     // Switch back to default
     const output = run('use default', envOverrides);
@@ -212,6 +217,14 @@ describe('CLI Integration', () => {
     // Active should be default
     const current = run('current', envOverrides);
     assert.ok(current.includes('default'));
+
+    // ~/.claude content must remain byte-for-byte unchanged across use default
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), beforeClaude);
+    assert.equal(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'), beforeSettings);
+
+    // Previous non-default profile must receive updated snapshot
+    assert.equal(readFileSync(join(profilesDir, 'work', 'CLAUDE.md'), 'utf-8'), beforeClaude);
+    assert.equal(readFileSync(join(profilesDir, 'work', 'settings.json'), 'utf-8'), beforeSettings);
   });
 
   it('use X from default skips save', () => {

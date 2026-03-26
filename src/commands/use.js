@@ -1,5 +1,5 @@
 import { getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { moveItemsToProfile, moveItemsToClaude, removeItems } from '../item-manager.js';
+import { moveItemsToProfile, moveItemsToClaude, saveItems, removeItems } from '../item-manager.js';
 import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths, moveDirsToProfile, moveDirsToClaude } from '../file-operations.js';
 import { validateProfile } from '../profile-validator.js';
 import { withLock, warnIfClaudeRunning } from '../safety.js';
@@ -42,18 +42,25 @@ export const useCommand = async (name, options) => {
     // 1. Save current state (skip if from=default — ~/.claude IS default)
     if (active && active !== DEFAULT_PROFILE && profileExists(active) && options.save !== false) {
       const activeDir = getProfileDir(active);
-      moveItemsToProfile(activeDir);
-      saveFiles(activeDir);
-      moveDirsToProfile(activeDir);
+      if (name === DEFAULT_PROFILE) {
+        saveItems(activeDir);
+        saveFiles(activeDir);
+      } else {
+        moveItemsToProfile(activeDir);
+        saveFiles(activeDir);
+        moveDirsToProfile(activeDir);
+      }
       updateSettingsPaths(activeDir, 'save');
       info(`Saved current state to "${active}"`);
     }
 
-    // 2. Remove leftovers (safety net after move + remove COPY_ITEMS)
-    if (active !== DEFAULT_PROFILE) {
-      removeItems();
+    // 2. Remove leftovers only when switching to non-default
+    if (name !== DEFAULT_PROFILE) {
+      if (active !== DEFAULT_PROFILE) {
+        removeItems();
+      }
+      removeFiles();
     }
-    removeFiles();
 
     // 3. Restore target (skip if to=default — ~/.claude already correct)
     if (name !== DEFAULT_PROFILE) {
