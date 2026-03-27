@@ -1,6 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROFILES_DIR, ACTIVE_FILE, PROFILES_META, CLAUDE_DIR, DEFAULT_PROFILE } from './constants.js';
+import {
+  PROFILES_DIR,
+  ACTIVE_FILE,
+  PROFILES_META,
+  CLAUDE_DIR,
+  DEFAULT_PROFILE,
+  PROFILES_SCHEMA_VERSION,
+  RUNTIMES_DIR,
+} from './constants.js';
 
 export const ensureProfilesDir = () => {
   if (!existsSync(PROFILES_DIR)) {
@@ -8,15 +16,69 @@ export const ensureProfilesDir = () => {
   }
 };
 
+const normalizeProfileMeta = (name, meta = {}) => {
+  const created = typeof meta.created === 'string' ? meta.created : new Date().toISOString();
+  const description = typeof meta.description === 'string' ? meta.description : '';
+  const mode =
+    meta.mode === 'legacy' || meta.mode === 'account-session'
+      ? meta.mode
+      : name === DEFAULT_PROFILE
+        ? 'legacy'
+        : 'account-session';
+  const runtimeDir = typeof meta.runtimeDir === 'string' && meta.runtimeDir ? meta.runtimeDir : getRuntimeDir(name);
+  const runtimeInitializedAt = typeof meta.runtimeInitializedAt === 'string' ? meta.runtimeInitializedAt : null;
+  const lastLaunchAt = typeof meta.lastLaunchAt === 'string' ? meta.lastLaunchAt : null;
+
+  return {
+    ...meta,
+    created,
+    description,
+    mode,
+    runtimeDir,
+    runtimeInitializedAt,
+    lastLaunchAt,
+  };
+};
+
+const normalizeProfiles = (raw) => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const legacyProfiles = raw.profiles && typeof raw.profiles === 'object' ? raw.profiles : raw;
+
+  const normalized = {};
+  for (const [name, meta] of Object.entries(legacyProfiles)) {
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) continue;
+    normalized[name] = normalizeProfileMeta(name, meta);
+  }
+
+  return normalized;
+};
+
 export const readProfiles = () => {
   const metaPath = join(PROFILES_DIR, PROFILES_META);
   if (!existsSync(metaPath)) return {};
-  return JSON.parse(readFileSync(metaPath, 'utf-8'));
+
+  try {
+    const raw = JSON.parse(readFileSync(metaPath, 'utf-8'));
+    return normalizeProfiles(raw);
+  } catch {
+    return {};
+  }
 };
 
-export const writeProfiles = (data) => {
+export const writeProfiles = (profiles) => {
   ensureProfilesDir();
-  writeFileSync(join(PROFILES_DIR, PROFILES_META), JSON.stringify(data, null, 2) + '\n');
+
+  const normalized = {};
+  for (const [name, meta] of Object.entries(profiles || {})) {
+    normalized[name] = normalizeProfileMeta(name, meta);
+  }
+
+  const payload = {
+    version: PROFILES_SCHEMA_VERSION,
+    profiles: normalized,
+  };
+
+  writeFileSync(join(PROFILES_DIR, PROFILES_META), JSON.stringify(payload, null, 2) + '\n');
 };
 
 export const getActive = () => {
@@ -41,11 +103,11 @@ export const clearActive = () => {
 
 export const addProfile = (name, metadata = {}) => {
   const profiles = readProfiles();
-  profiles[name] = {
+  profiles[name] = normalizeProfileMeta(name, {
     created: new Date().toISOString(),
     description: '',
     ...metadata,
-  };
+  });
   writeProfiles(profiles);
 };
 
@@ -70,6 +132,43 @@ export const validateName = (name) => {
 export const getProfileDir = (name) => {
   validateName(name);
   return join(PROFILES_DIR, name);
+};
+
+export const getRuntimeDir = (name) => {
+  validateName(name);
+  return join(RUNTIMES_DIR, name);
+};
+
+export const getProfileMeta = (name) => {
+  const profiles = readProfiles();
+  return profiles[name] || null;
+};
+
+export const updateProfileMeta = (name, patch) => {
+  const profiles = readProfiles();
+  if (!profiles[name]) return null;
+
+  const next = typeof patch === 'function' ? patch({ ...profiles[name] }) : { ...profiles[name], ...patch };
+  profiles[name] = normalizeProfileMeta(name, next);
+  writeProfiles(profiles);
+  return profiles[name];
+};
+
+export const markRuntimeInitialized = (name, runtimeDir) => {
+  const now = new Date().toISOString();
+  return updateProfileMeta(name, {
+    runtimeDir,
+    runtimeInitializedAt: now,
+    lastLaunchAt: now,
+    mode: 'account-session',
+  });
+};
+
+export const markProfileLaunched = (name) => {
+  return updateProfileMeta(name, {
+    lastLaunchAt: new Date().toISOString(),
+    mode: 'account-session',
+  });
 };
 
 export const listProfileNames = () => {

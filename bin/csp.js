@@ -37,7 +37,7 @@ program
 
 program
   .command('current')
-  .description('Show the active profile')
+  .description('Show the active legacy profile and isolated launch metadata')
   .action(currentCommand);
 
 program
@@ -101,7 +101,8 @@ program
 program
   .command('launch <name> [args...]')
   .alias('la')
-  .description('Switch to a profile and launch Claude Code (profile stays active after exit)')
+  .description('Launch isolated Claude session for a profile (use --legacy-global for old switch+launch behavior)')
+  .option('--legacy-global', 'Use legacy global switch path before launching Claude')
   .allowUnknownOption(true)
   .enablePositionalOptions(true)
   .passThroughOptions(true)

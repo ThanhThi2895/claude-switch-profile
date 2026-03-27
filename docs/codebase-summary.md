@@ -1,43 +1,46 @@
 # Claude Switch Profile — Codebase Summary
 
-**Version:** 1.1.0 | **Runtime:** Node.js ≥ 18 (ES modules) | **Deps:** chalk, commander
+**Version:** 1.2.0 | **Runtime:** Node.js ≥ 18 (ES modules) | **Deps:** chalk, commander
 
 ## What It Does
 
-CLI tool (`csp`) for managing multiple Claude Code configurations. Profiles capture symlinks (rules, agents, skills, hooks) and mutable files (settings.json, .env) from `~/.claude`, stored in `~/.claude-profiles/`.
+`csp` manages Claude Code profile state in two modes:
+- **Legacy global mode (`csp use`)**: mutates `~/.claude` and `.active`.
+- **Isolated account-session mode (`csp launch`)**: syncs static profile config into `~/.claude-profiles/.runtime/<profile>` and launches Claude with `CLAUDE_CONFIG_DIR` set to that runtime root.
 
 ## Project Structure
 
 ```
-bin/csp.js              → CLI entry point (commander.js, 12 commands)
-src/commands/           → 12 command files (init, current, list, create, save, use, delete, export, import, diff, launch, uninstall)
-src/constants.js        → Paths, managed item lists (SYMLINK_ITEMS, COPY_ITEMS, COPY_DIRS, NEVER_TOUCH)
-src/platform.js         → Cross-platform layer (isWindows, symlinkType → junction, findProcess)
-src/profile-store.js    → Metadata CRUD (profiles.json, .active marker)
-src/symlink-manager.js  → Symlink read/create/save/restore + real-dir-to-symlink migration
-src/file-operations.js  → File/directory copy/restore
-src/safety.js           → Lock file (PID), auto-backup (max 2), Claude process detection
-src/profile-validator.js → Profile structure + symlink target validation
-src/output-helpers.js   → Colored console output (✓ ⚠ ✗ ℹ)
-tests/                  → 3 test files: core-library, cli-integration, safety
+bin/csp.js                     → CLI entry point (commander.js, 13 commands)
+src/commands/                  → init, current, list, create, save, use, delete, export, import, diff, deactivate, launch, uninstall
+src/constants.js               → Paths + managed item lists + runtime constants
+src/profile-store.js           → profiles.json v2 normalization + active marker + runtime metadata
+src/runtime-instance-manager.js → Runtime sync/seed for isolated launch
+src/item-manager.js            → Managed item copy/move/read/remove
+src/file-operations.js         → COPY_ITEMS/COPY_DIRS save/restore/remove + settings path rewriting
+src/safety.js                  → Global lock + per-profile runtime lock + backup pruning (max 2)
+src/profile-validator.js       → Profile structure validation
+src/platform.js                → Cross-platform process checks (`tasklist`/`pgrep`)
+src/output-helpers.js          → CLI output helpers
+tests/*.test.js                → Core, CLI integration, safety
 ```
 
-## Key Patterns
+## Implemented Behaviors Verified
 
-- **Symlink vs Copy strategy**: Rules/agents/skills → symlinks to external repos. Settings/.env → copied per profile.
-- **Real-dir handling**: `saveSymlinks()` auto-migrates real dirs to profile dir, replacing with symlink.
-- **Windows**: NTFS junctions (no admin), `tasklist` for process detection, `claude.cmd` for launch.
-- **Safety**: Lock file prevents concurrent ops; stale lock detection via PID check; auto-backup on every switch (pruned to 2).
-- **Env overrides**: `CSP_HOME`, `CSP_CLAUDE_DIR`, `CSP_PROFILES_DIR` for isolated testing.
+- Profile metadata stored in `profiles.json` with schema `version: 2` and per-profile fields (`mode`, `runtimeDir`, `runtimeInitializedAt`, `lastLaunchAt`).
+- Managed static items include `CLAUDE.md`, `rules`, `agents`, `skills`, `hooks`, statusline files, `.luna.json`.
+- Copied mutable files include `settings.json`, `.env`, `.ck.json`, `.ckignore`, `.mcp.json`, `.mcp.json.example`, `.env.example`, `.gitignore`.
+- Copied directories include `commands`, `plugins`, `workflows`, `scripts`, `output-styles`, `schemas`.
+- Runtime/session paths listed in `NEVER_TOUCH` are excluded from managed operations.
+- Backups are created by `createBackup()` and pruned to 2 most recent snapshots.
+- `csp use` now fails fast while Claude Code is running; internal legacy launch can still bypass via existing internal option.
+- Isolated launch resolves allowlisted `ANTHROPIC_*` deterministically with precedence (`settings.json env` > profile `.env` allowlist > parent env), strips inherited `CLAUDECODE`/`CLAUDE_CONFIG_DIR` and inherited `ANTHROPIC_*`, then sets runtime `CLAUDE_CONFIG_DIR`.
 
-## Recent Changes (v1.1.0)
+## Notes from repomix-output.xml
 
-- Added `launch` command (switch + spawn Claude with arg forwarding)
-- Added `uninstall` command (restore profile + wipe all data)
-- Added `platform.js` for Windows/Unix cross-platform support
-- `saveSymlinks` handles real dirs/files (moves + creates symlink)
-- `removeSymlinks` handles real dirs/files (not just symlinks)
+- Packed snapshot includes this repo plus embedded `ccs-main/` content present in workspace.
+- Current docs and source for CSP are under repository root (`bin/`, `src/`, `tests/`, `docs/`).
 
 ---
 
-*Last updated: 2026-03-23*
+*Last updated: 2026-03-26*

@@ -1,6 +1,16 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync, copyFileSync, cpSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  lstatSync,
+  rmSync,
+  copyFileSync,
+  cpSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -18,20 +28,38 @@ const createTestEnv = () => {
 describe('Profile Store', () => {
   let env;
 
-  beforeEach(() => { env = createTestEnv(); });
-  afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(() => {
+    rmSync(env.tempDir, { recursive: true, force: true });
+  });
 
   it('reads empty profiles when no file exists', () => {
     const metaPath = join(env.profilesDir, 'profiles.json');
     assert.equal(existsSync(metaPath), false);
   });
 
-  it('writes and reads profiles.json', () => {
+  it('writes and reads profiles.json (legacy shape)', () => {
     const metaPath = join(env.profilesDir, 'profiles.json');
     const data = { myprofile: { created: '2026-03-11', description: 'test' } };
     writeFileSync(metaPath, JSON.stringify(data, null, 2));
     const read = JSON.parse(readFileSync(metaPath, 'utf-8'));
     assert.deepEqual(read, data);
+  });
+
+  it('normalizes v2 profiles.json shape', () => {
+    const metaPath = join(env.profilesDir, 'profiles.json');
+    const data = {
+      version: 2,
+      profiles: {
+        myprofile: { created: '2026-03-11T00:00:00.000Z', description: 'test', mode: 'account-session' },
+      },
+    };
+    writeFileSync(metaPath, JSON.stringify(data, null, 2));
+    const read = JSON.parse(readFileSync(metaPath, 'utf-8'));
+    assert.equal(read.version, 2);
+    assert.ok(read.profiles.myprofile);
   });
 
   it('writes and reads .active file', () => {
@@ -51,16 +79,16 @@ describe('Profile Store', () => {
   it('adds and removes profile entries', () => {
     const metaPath = join(env.profilesDir, 'profiles.json');
     const profiles = {};
-    profiles['work'] = { created: '2026-03-11', description: 'Work profile' };
-    profiles['personal'] = { created: '2026-03-11', description: 'Personal' };
+    profiles.work = { created: '2026-03-11', description: 'Work profile' };
+    profiles.personal = { created: '2026-03-11', description: 'Personal' };
     writeFileSync(metaPath, JSON.stringify(profiles, null, 2));
 
     // Remove one
-    delete profiles['personal'];
+    delete profiles.personal;
     writeFileSync(metaPath, JSON.stringify(profiles, null, 2));
     const read = JSON.parse(readFileSync(metaPath, 'utf-8'));
     assert.equal(Object.keys(read).length, 1);
-    assert.equal(read['work'].description, 'Work profile');
+    assert.equal(read.work.description, 'Work profile');
   });
 });
 
@@ -69,8 +97,12 @@ describe('Profile Store', () => {
 describe('Item Manager', () => {
   let env;
 
-  beforeEach(() => { env = createTestEnv(); });
-  afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(() => {
+    rmSync(env.tempDir, { recursive: true, force: true });
+  });
 
   it('copies files to profile dir and reads them back', () => {
     const targetFile = join(env.claudeDir, 'CLAUDE.md');
@@ -172,8 +204,12 @@ describe('Item Manager', () => {
 describe('File Operations', () => {
   let env;
 
-  beforeEach(() => { env = createTestEnv(); });
-  afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(() => {
+    rmSync(env.tempDir, { recursive: true, force: true });
+  });
 
   it('copies files from claude dir to profile dir', () => {
     writeFileSync(join(env.claudeDir, 'settings.json'), '{"hooks":{}}');
@@ -227,8 +263,12 @@ describe('File Operations', () => {
 describe('Profile Validator', () => {
   let env;
 
-  beforeEach(() => { env = createTestEnv(); });
-  afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(() => {
+    rmSync(env.tempDir, { recursive: true, force: true });
+  });
 
   it('fails validation for missing directory', () => {
     const profileDir = join(env.tempDir, 'nonexistent');
@@ -267,8 +307,12 @@ describe('Profile Validator', () => {
 describe('Full Profile Switch Cycle', () => {
   let env;
 
-  beforeEach(() => { env = createTestEnv(); });
-  afterEach(() => { rmSync(env.tempDir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(() => {
+    rmSync(env.tempDir, { recursive: true, force: true });
+  });
 
   it('creates profile, switches, and restores correctly using copies', () => {
     // Setup: create files in claude dir
@@ -320,5 +364,106 @@ describe('Full Profile Switch Cycle', () => {
     assert.equal(readFileSync(join(env.claudeDir, 'CLAUDE.md'), 'utf-8'), '# Profile A');
     // Still real files, not symlinks
     assert.equal(lstatSync(join(env.claudeDir, 'CLAUDE.md')).isSymbolicLink(), false);
+  });
+});
+
+describe('Launch Effective Env Resolver', () => {
+  it('sanitizes reserved launch keys from inherited env', async () => {
+    const { sanitizeInheritedLaunchEnv } = await import('../src/launch-effective-env-resolver.js');
+
+    const sanitized = sanitizeInheritedLaunchEnv({
+      PATH: '/test/bin',
+      CLAUDECODE: '1',
+      claudECode: '2',
+      CLAUDE_CONFIG_DIR: '/tmp/runtime',
+      KEEP_ME: 'ok',
+    });
+
+    assert.equal(sanitized.PATH, '/test/bin');
+    assert.equal(sanitized.KEEP_ME, 'ok');
+    assert.equal('CLAUDECODE' in sanitized, false);
+    assert.equal('claudECode' in sanitized, false);
+    assert.equal('CLAUDE_CONFIG_DIR' in sanitized, false);
+  });
+
+  it('applies launch env precedence override > settings > dotenv > parent', async () => {
+    const { buildEffectiveLaunchEnv } = await import('../src/launch-effective-env-resolver.js');
+
+    const { launchEnv, diagnostics } = buildEffectiveLaunchEnv({
+      parentEnv: {
+        PATH: '/test/bin',
+        ANTHROPIC_AUTH_TOKEN: 'parent-token',
+        ANTHROPIC_BASE_URL: 'https://parent.example.com',
+        ANTHROPIC_MODEL: 'parent-model',
+      },
+      profileDotEnvEnv: {
+        ANTHROPIC_BASE_URL: 'https://dotenv.example.com',
+      },
+      profileSettingsEnv: {
+        ANTHROPIC_AUTH_TOKEN: 'settings-token',
+      },
+      launchOverrides: {
+        ANTHROPIC_MODEL: 'override-model',
+      },
+    });
+
+    assert.equal(launchEnv.PATH, '/test/bin');
+    assert.equal(launchEnv.ANTHROPIC_AUTH_TOKEN, 'settings-token');
+    assert.equal(launchEnv.ANTHROPIC_BASE_URL, 'https://dotenv.example.com');
+    assert.equal(launchEnv.ANTHROPIC_MODEL, 'override-model');
+
+    assert.equal(diagnostics.anthropicKeySources.ANTHROPIC_AUTH_TOKEN, 'profile-settings');
+    assert.equal(diagnostics.anthropicKeySources.ANTHROPIC_BASE_URL, 'profile-dotenv');
+    assert.equal(diagnostics.anthropicKeySources.ANTHROPIC_MODEL, 'launch-override');
+  });
+
+  it('supports case-insensitive ANTHROPIC keys across env sources', async () => {
+    const { buildEffectiveLaunchEnv } = await import('../src/launch-effective-env-resolver.js');
+
+    const { launchEnv } = buildEffectiveLaunchEnv({
+      parentEnv: {
+        anthropic_auth_token: 'parent-token-lc',
+        ANTHROPIC_BASE_URL: 'https://parent.example.com',
+      },
+      profileDotEnvEnv: {
+        anthropic_base_url: 'https://dotenv.example.com',
+      },
+      profileSettingsEnv: {
+        anthropic_model: 'settings-model-lc',
+      },
+    });
+
+    assert.equal(launchEnv.ANTHROPIC_AUTH_TOKEN, 'parent-token-lc');
+    assert.equal(launchEnv.ANTHROPIC_BASE_URL, 'https://dotenv.example.com');
+    assert.equal(launchEnv.ANTHROPIC_MODEL, 'settings-model-lc');
+  });
+
+  it('parses settings.env and dotenv content using allowlist keys only', async () => {
+    const { parseSettingsLaunchEnv, parseDotEnvLaunchEnv } = await import('../src/launch-effective-env-resolver.js');
+
+    const settingsEnv = parseSettingsLaunchEnv(
+      JSON.stringify({
+        env: {
+          ANTHROPIC_AUTH_TOKEN: 'token',
+          anthropic_base_url: 'https://settings.example.com',
+          SOMETHING_ELSE: 'ignored',
+        },
+      }),
+    );
+    const dotEnvEnv = parseDotEnvLaunchEnv([
+      '# comment',
+      'export ANTHROPIC_MODEL="model-from-dotenv"',
+      'ANTHROPIC_AUTH_TOKEN=dotenv-token # inline comment',
+      'NOT_ALLOWED=value',
+    ].join('\n'));
+
+    assert.deepEqual(settingsEnv, {
+      ANTHROPIC_AUTH_TOKEN: 'token',
+      ANTHROPIC_BASE_URL: 'https://settings.example.com',
+    });
+    assert.deepEqual(dotEnvEnv, {
+      ANTHROPIC_MODEL: 'model-from-dotenv',
+      ANTHROPIC_AUTH_TOKEN: 'dotenv-token',
+    });
   });
 });

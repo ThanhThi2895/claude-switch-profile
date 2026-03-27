@@ -127,7 +127,7 @@ export const createCommand = (name, options) => {
     info('Created new profile (full clone of current state)');
   }
 
-  addProfile(name, { description: options.description || '' });
+  addProfile(name, { description: options.description || '', mode: 'account-session' });
 
   // Set as active if first profile
   if (!getActive()) {

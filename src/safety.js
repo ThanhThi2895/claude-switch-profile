@@ -5,40 +5,58 @@ import { readCurrentItems } from './item-manager.js';
 import { findProcess } from './platform.js';
 import { warn } from './output-helpers.js';
 
+const CLAUDE_RUNNING_ERROR = 'Claude Code appears to be running. Close all Claude sessions before switching profiles.';
+
 const MAX_BACKUPS = 2;
 
-// Acquire a lock file — atomic O_EXCL prevents TOCTOU race
-export const acquireLock = () => {
-  const lockPath = join(PROFILES_DIR, LOCK_FILE);
+const isProcessRunning = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const acquireLockFile = (lockPath) => {
+  mkdirSync(PROFILES_DIR, { recursive: true });
 
   try {
     writeFileSync(lockPath, String(process.pid) + '\n', { flag: 'wx' });
   } catch (err) {
-    if (err.code === 'EEXIST') {
-      // Lock exists — check if stale
-      const content = readFileSync(lockPath, 'utf-8').trim();
-      const pid = parseInt(content, 10);
+    if (err.code !== 'EEXIST') throw err;
 
-      if (pid && !isProcessRunning(pid)) {
-        unlinkSync(lockPath);
-        writeFileSync(lockPath, String(process.pid) + '\n', { flag: 'wx' });
-      } else {
-        throw new Error(`Another csp operation is running (PID: ${content}). Remove ${lockPath} if stale.`);
-      }
-    } else {
-      throw err;
+    const content = readFileSync(lockPath, 'utf-8').trim();
+    const pid = parseInt(content, 10);
+
+    if (pid && !isProcessRunning(pid)) {
+      unlinkSync(lockPath);
+      writeFileSync(lockPath, String(process.pid) + '\n', { flag: 'wx' });
+      return;
     }
+
+    throw new Error(`Another csp operation is running (PID: ${content}). Remove ${lockPath} if stale.`);
   }
 };
 
-// Release the lock file
-export const releaseLock = () => {
-  const lockPath = join(PROFILES_DIR, LOCK_FILE);
+const releaseLockFile = (lockPath) => {
   try {
     if (existsSync(lockPath)) unlinkSync(lockPath);
   } catch {
     // Best effort
   }
+};
+
+// Acquire a lock file — atomic O_EXCL prevents TOCTOU race
+export const acquireLock = () => {
+  const lockPath = join(PROFILES_DIR, LOCK_FILE);
+  acquireLockFile(lockPath);
+};
+
+// Release the lock file
+export const releaseLock = () => {
+  const lockPath = join(PROFILES_DIR, LOCK_FILE);
+  releaseLockFile(lockPath);
 };
 
 // Wrapper that acquires/releases lock around async function
@@ -51,18 +69,36 @@ export const withLock = async (fn) => {
   }
 };
 
-// Check if a PID is still running
-const isProcessRunning = (pid) => {
+const runtimeLockName = (profileName) => {
+  return `.runtime.${profileName}.lock`;
+};
+
+export const acquireRuntimeLock = (profileName) => {
+  const lockPath = join(PROFILES_DIR, runtimeLockName(profileName));
+  acquireLockFile(lockPath);
+};
+
+export const releaseRuntimeLock = (profileName) => {
+  const lockPath = join(PROFILES_DIR, runtimeLockName(profileName));
+  releaseLockFile(lockPath);
+};
+
+export const withRuntimeLock = async (profileName, fn) => {
+  acquireRuntimeLock(profileName);
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+    return await fn();
+  } finally {
+    releaseRuntimeLock(profileName);
   }
 };
 
 // Check if claude process is running (cross-platform)
 export const isClaudeRunning = () => {
+  if (process.env.NODE_ENV === 'test') {
+    if (process.env.CSP_TEST_CLAUDE_RUNNING === '1') return true;
+    if (process.env.CSP_TEST_CLAUDE_RUNNING === '0') return false;
+  }
+
   return findProcess('claude');
 };
 
@@ -70,6 +106,12 @@ export const isClaudeRunning = () => {
 export const warnIfClaudeRunning = () => {
   if (isClaudeRunning()) {
     warn('Claude Code appears to be running. Restart your Claude session after switching profiles.');
+  }
+};
+
+export const assertClaudeNotRunning = (processChecker = isClaudeRunning) => {
+  if (processChecker()) {
+    throw new Error(CLAUDE_RUNNING_ERROR);
   }
 };
 

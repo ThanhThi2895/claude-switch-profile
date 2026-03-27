@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-Claude Switch Profile is a lightweight Node.js CLI application that manages multiple Claude Code configurations by orchestrating symlinks and file copies. The system follows a modular, layered architecture with clear separation of concerns.
+Claude Switch Profile is a lightweight Node.js CLI application that manages multiple Claude Code configurations with two modes: legacy global switching (`use`) and isolated launch sessions (`launch`) via per-profile runtime roots. The system follows a modular, layered architecture with clear separation of concerns.
 
 ### High-Level Architecture Diagram
 
@@ -14,17 +14,18 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                   Commands Layer (src/commands/)             │
-│  init  current  list  create  save  use  delete  export  import  diff  launch  uninstall
+│  init  current  list  create  save  use  delete  export  import  diff  deactivate  launch  uninstall
 └────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                  Core Libraries (src/)                      │
 ├──────────────────────────────────────────────────────────────┤
-│  profile-store.js     │  Metadata persistence                │
-│  symlink-manager.js   │  Symlink creation/restoration        │
+│  profile-store.js     │  Metadata + schema normalization      │
+│  runtime-instance-manager.js │ Isolated runtime prep/sync      │
+│  item-manager.js      │  Managed item copy/move              │
 │  file-operations.js   │  File/directory copy/restore         │
 │  profile-validator.js │  Structure validation                │
-│  safety.js            │  Locks, backups, process detection   │
+│  safety.js            │  Global/runtime locks, backups       │
 ├──────────────────────────────────────────────────────────────┤
 │  constants.js         │  Configuration & paths               │
 │  output-helpers.js    │  Console formatting                  │
@@ -48,7 +49,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 **Responsibilities:**
 - Load package.json for version
 - Create Commander.js program
-- Register all 12 commands with their options
+- Register all 13 commands with their options
 - Parse command line arguments
 - Invoke appropriate command handler
 
@@ -66,7 +67,8 @@ program.command('delete')       // Delete profile
 program.command('export')       // Export to archive
 program.command('import')       // Import from archive
 program.command('diff')         // Compare profiles
-program.command('launch')       // Switch + launch Claude
+program.command('deactivate')   // Deactivate active profile
+program.command('launch')       // Isolated launch (default) or legacy-global
 program.command('uninstall')    // Remove CSP completely
 ```
 
@@ -99,14 +101,14 @@ Each command file exports a single async function matching the command name.
 **Flow:**
 1. Validate profile doesn't already exist
 2. If `--from` option: clone from source profile
-3. Otherwise: create new directory and call saveSymlinks + saveFiles
+3. Otherwise: create new directory and capture managed items/files
 4. Add profile to profiles.json
 5. Set as active if first profile
 
 #### save.js
 **Flow:**
 1. Get active profile
-2. Call saveSymlinks to write source.json
+2. Call saveItems to write source.json
 3. Call saveFiles to copy mutable files
 4. Display success
 
@@ -114,16 +116,14 @@ Each command file exports a single async function matching the command name.
 **Flow (most complex)**
 1. Validate target profile exists
 2. Validate profile structure
-3. (Optional) Validate symlink targets exist
-4. If `--dry-run`: show changes and exit
-5. If not active: call withLock() to:
+3. If `--dry-run`: show changes and exit
+4. If not active: call withLock() to:
    - Save current profile state
-   - Create backup
-   - Remove managed items from ~/.claude
+   - Remove managed items/files from ~/.claude as needed
    - Restore target profile
    - Update .active marker
-6. Warn if Claude is running
-7. Display success message
+5. Warn if Claude is running
+6. Display success message
 
 #### delete.js
 **Flow:**
@@ -148,16 +148,25 @@ Each command file exports a single async function matching the command name.
 **Flow:**
 1. Resolve "current" alias to active profile name
 2. Validate both profiles exist
-3. Compare source.json (symlink targets)
+3. Compare source.json (managed item map)
 4. Compare file presence and content
 5. Display formatted differences
+
+#### deactivate.js
+**Flow:**
+1. Read active profile
+2. Exit early if no active profile or active is `default`
+3. Optionally save current state (unless `--no-save`)
+4. Remove managed items/files from `~/.claude`
+5. Clear `.active` marker
+6. Print restart guidance
 
 #### launch.js
 **Flow:**
 1. Validate profile exists
-2. Call `useCommand()` internally (saves + switches)
-3. Spawn `claude` process with forwarded arguments
-4. Use `claude.cmd` on Windows, `claude` on Unix
+2. Default mode: acquire per-profile runtime lock, sync runtime root, resolve effective allowlisted `ANTHROPIC_*` launch env (`settings.json env` > `.env` allowlist > parent env), sanitize inherited launch env (`CLAUDECODE`/`CLAUDE_CONFIG_DIR`) and inherited `ANTHROPIC_*`, then set `CLAUDE_CONFIG_DIR`
+3. Optional `--legacy-global`: call `useCommand()` first
+4. Resolve Claude executable path, then spawn process with forwarded arguments (`where.exe` + Windows fallbacks when needed)
 5. Inherit stdio for interactive use
 6. Forward Claude's exit code
 
@@ -167,7 +176,7 @@ Each command file exports a single async function matching the command name.
 2. Show summary of what will happen
 3. Prompt for confirmation (unless `--force`)
 4. Warn if Claude is running
-5. Acquire lock, create final backup
+5. Acquire lock and create final backup (best effort)
 6. Remove all managed items from `~/.claude`
 7. Restore chosen profile (active or `--profile`)
 8. Release lock, delete `~/.claude-profiles/` entirely
@@ -179,24 +188,29 @@ Each command file exports a single async function matching the command name.
 
 #### profile-store.js
 
-**Purpose:** Manage profile metadata and active profile marker
+**Purpose:** Manage profile metadata, schema normalization, runtime metadata, and active legacy marker
 
 **Data Files:**
-- `~/.claude-profiles/profiles.json` — All profile metadata
-- `~/.claude-profiles/.active` — Current active profile name
+- `~/.claude-profiles/profiles.json` — Versioned profile metadata
+- `~/.claude-profiles/.active` — Current active profile name for legacy `use`
 
 **Functions:**
 ```javascript
-ensureProfilesDir()          // Mkdir ~/.claude-profiles if missing
-readProfiles()               // Load profiles.json
-writeProfiles(data)          // Save profiles.json
-getActive()                  // Read .active file
-setActive(name)              // Write .active file
-addProfile(name, metadata)   // Add to profiles.json
-removeProfile(name)          // Remove from profiles.json
-profileExists(name)          // Check if profile dir exists
-getProfileDir(name)          // Return profile directory path
-listProfileNames()           // Return all profile names
+ensureProfilesDir()             // Mkdir ~/.claude-profiles if missing
+readProfiles()                  // Load + normalize profiles.json (legacy/v2)
+writeProfiles(data)             // Save profiles.json in v2 schema
+getActive()                     // Read .active file
+setActive(name)                 // Write .active file
+addProfile(name, metadata)      // Add profile metadata
+removeProfile(name)             // Remove profile metadata
+profileExists(name)             // Check if profile dir exists
+getProfileDir(name)             // Return profile directory path
+getRuntimeDir(name)             // Return isolated runtime path
+getProfileMeta(name)            // Return metadata for one profile
+updateProfileMeta(name, patch)  // Patch metadata atomically
+markRuntimeInitialized(name)    // Stamp runtime init + launch timestamps
+markProfileLaunched(name)       // Stamp launch timestamp
+listProfileNames()              // Return all profile names
 ```
 
 **State Management:**
@@ -206,31 +220,42 @@ listProfileNames()           // Return all profile names
 
 ---
 
-#### symlink-manager.js
+#### runtime-instance-manager.js
 
-**Purpose:** Manage symlinks in `~/.claude` and save/restore symlink targets
+**Purpose:** Build and sync isolated runtime roots for launch-time account sessions
 
-**Data File:**
-- `{profile}/source.json` — Map of symlink names to target paths
+**Data Paths:**
+- `~/.claude-profiles/.runtime/<profile>/` — Per-profile isolated runtime root
 
 **Functions:**
 ```javascript
-readCurrentSymlinks()        // Read all managed symlinks from ~/.claude
-removeSymlinks()             // Unlink all managed symlinks
-createSymlinks(sourceMap)    // Create symlinks from map
-saveSymlinks(profileDir)     // Write current symlinks to source.json
-restoreSymlinks(profileDir)  // Read source.json and create symlinks
+ensureRuntimeInstance(profileName) // Prepare runtime root and return path
+seedRuntimeIfNeeded(profileName)   // Initialize/sync runtime + update metadata
+syncStaticConfig(profileName)      // Sync managed static config into runtime
 ```
 
-**Symlink Items Managed:**
-- `CLAUDE.md`, `rules`, `agents`, `skills`, `hooks`, `statusline.cjs`, `.luna.json`
-
 **Key Behaviors:**
-- Only manages items in SYMLINK_ITEMS constant
-- Resolves to absolute paths (via `resolve()`)
-- Skips missing items gracefully
-- Overwrites existing symlinks
-- Validates existence before creating symlinks
+- Syncs static profile config (managed items + copied files/dirs)
+- Keeps runtime/account continuity isolated per profile runtime root
+- Rewrites settings paths for runtime root when needed
+- Supports repeated launch reuse with refresh-on-launch policy
+
+---
+
+#### item-manager.js
+
+**Purpose:** Manage static managed items (`MANAGED_ITEMS`) across profile save/restore/switch flows
+
+**Functions:**
+```javascript
+readCurrentItems()     // Build map of managed items in ~/.claude
+copyItems(profileDir)  // Copy managed items from ~/.claude to profileDir + source.json
+saveItems(profileDir)  // Alias of copyItems
+restoreItems(profileDir) // Restore managed items from source map into ~/.claude
+removeItems()          // Remove managed items from ~/.claude
+moveItemsToProfile(profileDir) // Move managed items ~/.claude -> profile
+moveItemsToClaude(profileDir)  // Move managed items profile -> ~/.claude
+```
 
 ---
 
@@ -268,14 +293,14 @@ removeFiles()                // Delete managed files/dirs from ~/.claude
 **Functions:**
 ```javascript
 validateProfile(profileDir)          // Check if profile dir is valid
-validateSourceTargets(sourceMap)     // Check if symlink targets exist
+validateSourceTargets(sourceMap)     // Check if managed item targets exist
 ```
 
 **Validation Rules:**
 - Profile directory must exist
-- source.json must be present (or can be missing if no symlinks)
+- source.json must be present
 - All files mentioned must be valid (readable, not corrupted)
-- Symlink targets should exist (unless --force used)
+- Managed item targets should exist (unless --force used)
 
 ---
 
@@ -284,18 +309,21 @@ validateSourceTargets(sourceMap)     // Check if symlink targets exist
 **Purpose:** Provide operational safety features
 
 **Data:**
-- `~/.claude-profiles/.lock` — PID-based lock file
+- `~/.claude-profiles/.lock` — PID-based global operation lock
+- `~/.claude-profiles/.runtime.<profile>.lock` — PID-based per-profile runtime init lock
 - `~/.claude-profiles/.backup/{timestamp}/` — Timestamped backups
 
 **Functions:**
 ```javascript
-acquireLock()                // Write lock file with PID
-releaseLock()                // Delete lock file
-withLock(fn)                 // Acquire/release around async function
-isProcessRunning(pid)        // Check if PID is still running
-isClaudeRunning()            // Detect Claude process via pgrep
-warnIfClaudeRunning()        // Print warning if Claude found
-createBackup()               // Create timestamped backup of managed items
+acquireLock()                     // Write global lock file with PID
+releaseLock()                     // Delete global lock file
+withLock(fn)                      // Acquire/release global lock around async fn
+acquireRuntimeLock(profileName)   // Write runtime lock file with PID
+releaseRuntimeLock(profileName)   // Delete runtime lock file
+withRuntimeLock(profileName, fn)  // Acquire/release runtime lock around async fn
+isClaudeRunning()                 // Detect Claude process via platform layer
+warnIfClaudeRunning()             // Print warning if Claude found
+createBackup()                    // Create timestamped backup of managed items
 ```
 
 **Key Features:**
@@ -330,16 +358,19 @@ PROFILES_DIR            // ~/.claude-profiles (or CSP_PROFILES_DIR override)
 
 ACTIVE_FILE             // ".active" marker
 PROFILES_META           // "profiles.json" metadata
-SOURCE_FILE             // "source.json" symlink targets
+SOURCE_FILE             // "source.json" managed item map
 LOCK_FILE               // ".lock" operational lock
 BACKUP_DIR              // ".backup" timestamped backups
 
-SYMLINK_ITEMS           // Items managed via symlinks
-SYMLINK_DIRS            // Directory-type items: rules, agents, skills, hooks
-COPY_ITEMS              // Files managed via copy
+MANAGED_ITEMS           // Managed static items copied into profiles/runtime
+MANAGED_DIRS            // Directory-type managed items
+COPY_ITEMS              // Mutable files managed via copy
 COPY_DIRS               // Directories managed via copy
-NEVER_TOUCH             // Items never managed
-ALL_MANAGED             // Union of above
+NEVER_TOUCH             // Runtime/session items never managed
+RUNTIME_DIR_NAME        // Runtime root directory name (.runtime)
+RUNTIMES_DIR            // Runtime base directory
+LAUNCH_CONFIG_ENV       // Env var used by launch (CLAUDE_CONFIG_DIR)
+ALL_MANAGED             // Union of managed + copied items
 ```
 
 **Environment Overrides:**
@@ -377,12 +408,10 @@ table(rows)      // Formatted table output
 **Functions:**
 ```javascript
 isWindows                      // Boolean: process.platform === 'win32'
-symlinkType(targetPath)        // 'junction' on Windows, undefined on Unix
 findProcess(name)              // Cross-platform process detection
 ```
 
 **Key Behaviors:**
-- On Windows: uses NTFS junctions for all symlinks (no admin required)
 - On Windows: uses `tasklist /FI` for process detection
 - On Unix: uses `pgrep -x` for process detection
 - Gracefully handles missing tools (returns false on error)
@@ -403,8 +432,9 @@ Is --from specified?
     │       └─ info("Cloned from...")
     │
     └─ NO: Create profile_dir
-           saveSymlinks() → Write source.json
-           saveFiles()    → Copy COPY_ITEMS + COPY_DIRS
+           copy managed/copy items from ~/.claude
+           write source.json
+           saveFiles() → Copy COPY_ITEMS + COPY_DIRS
            └─ info("Captured current configuration")
     ↓
 addProfile(name, metadata)
@@ -429,12 +459,9 @@ Is profile already active?
     ↓
 validateProfile() → Error if invalid
     ↓
-validateSourceTargets() → Warning if targets missing
-    ├─ --force specified?
-    │  ├─ YES: Proceed
-    │  └─ NO: error("Use --force") → Exit
-    │
-    └─ All valid: Continue
+validateProfile() ensures profile structure valid
+    ↓
+Continue (managed source target validation may warn in specific commands)
     ↓
 --dry-run specified?
     ├─ YES: info("[Dry run] Would switch...") → Exit
@@ -445,25 +472,12 @@ warnIfClaudeRunning()
 withLock(async () => {
     │
     ├─ Active profile exists && !--no-save?
-    │  ├─ YES: saveSymlinks(active_dir)
-    │  │        saveFiles(active_dir)
-    │  │        info("Saved current state")
+    │  ├─ YES: save active state into active profile dir
     │  └─ NO: Skip
     │
-    ├─ createBackup()
-    │  └─ Copy all managed items to ~/.claude-profiles/.backup/{timestamp}
+    ├─ remove managed items/files from ~/.claude (non-default target)
     │
-    ├─ removeSymlinks()
-    │  └─ Unlink all SYMLINK_ITEMS from ~/.claude
-    │
-    ├─ removeFiles()
-    │  └─ Delete all COPY_ITEMS + COPY_DIRS from ~/.claude
-    │
-    ├─ restoreSymlinks(target_dir)
-    │  └─ Read source.json and create symlinks
-    │
-    ├─ restoreFiles(target_dir)
-    │  └─ Copy files/dirs from profile to ~/.claude
+    ├─ restore target profile files into ~/.claude (non-default target)
     │
     ├─ setActive(profile_name)
     │  └─ Write .active file
@@ -473,6 +487,28 @@ withLock(async () => {
 })
     ↓
 info("Restart your Claude Code session")
+```
+
+### Isolated Launch Flow (launch command)
+
+```
+csp launch <profile> [claude-args...]
+    ↓
+Validate profile exists
+    ↓
+--legacy-global?
+    ├─ YES: call use flow above, then spawn claude
+    └─ NO: isolated mode
+          ↓
+       withRuntimeLock(profile, async () => {
+          ensureRuntimeInstance(profile)
+          // sync static config into ~/.claude-profiles/.runtime/<profile>
+       })
+          ↓
+       spawn claude with env:
+       CLAUDE_CONFIG_DIR=~/.claude-profiles/.runtime/<profile>
+          ↓
+       keep .active unchanged
 ```
 
 ### Profile Diff Flow
@@ -602,21 +638,21 @@ Extracts to new profile directory
 ### Validation Errors (before execution)
 - Profile doesn't exist
 - Profile structure invalid
-- Symlink targets missing (unless --force)
+- Invalid profile name/path
 
 **Behavior:** Print error and exit(1)
 
 ### Operational Errors (during execution)
-- Lock file can't be acquired
-- File copy fails
-- Symlink creation fails
+- Global/runtime lock file can't be acquired
+- File copy/sync fails
+- Claude process spawn fails
 - JSON parsing fails
 
 **Behavior:** Print error and release lock, exit(1)
 
 ### Warnings (non-fatal)
 - Claude process detected running
-- Symlink targets missing (with --force)
+- Profile recently used in isolated launch mode but user runs legacy `use`
 - Already at target profile
 
 **Behavior:** Print warning and continue
@@ -637,11 +673,11 @@ Extracts to new profile directory
 
 ### Adding New Managed Items
 
-To add a new symlink item:
-1. Add to `SYMLINK_ITEMS` in constants.js
-2. Ensure external target directory exists
-3. Run `csp save` to capture symlink in current profile
-4. Symlinks will be managed automatically in future switches
+To add a new managed static item:
+1. Add to `MANAGED_ITEMS` in constants.js
+2. Ensure item exists in profile source directory
+3. Run `csp save` if needed to capture into profile
+4. Item will sync into isolated runtime on launch
 
 To add a new copied file:
 1. Add to `COPY_ITEMS` in constants.js
@@ -661,12 +697,13 @@ To add protected items (never managed):
 
 1. **Core Library Tests** (core-library.test.js)
    - Profile store operations
-   - Symlink operations
    - File operations
    - Validation logic
 
 2. **CLI Integration Tests** (cli-integration.test.js)
    - End-to-end command flows
+   - Isolated launch + legacy-global launch behavior
+   - Runtime metadata + runtime root sync
    - Command option parsing
    - Error scenarios
 
@@ -692,7 +729,8 @@ To add protected items (never managed):
 | List profiles | < 100ms | Just reads JSON files |
 | Create profile | < 500ms | Depends on file count/size |
 | Save state | < 500ms | Copy time scales with file count |
-| Switch profile | < 1s | Lock + backup + copy operations |
+| Switch profile | < 1s | Legacy global lock + copy operations |
+| Launch profile | < 1s | Runtime lock + runtime sync + spawn |
 | Export profile | < 2s | tar compression time |
 | Import profile | < 2s | tar extraction time |
 | Diff profiles | < 100ms | File listing + comparison |
@@ -705,12 +743,9 @@ To add protected items (never managed):
 
 ### Distribution Method
 - npm registry (`npm install -g claude-switch-profile`)
-- Single executable (via pkg/nexe) for standalone use
 
 ### Installation Footprint
-- ~2 MB (node_modules)
-- ~100 KB (application code)
-- ~500 MB (optional: bundled Node.js)
+- Depends on global npm + Node.js environment; no bundled standalone binary is documented in this repository
 
 ---
 
@@ -723,7 +758,7 @@ To add protected items (never managed):
 - No authentication required
 
 ### Trusted Items
-- Symlink targets (external repos)
+- Profile-managed config files/directories
 - File contents (user responsibility)
 - Lock files (integrity verified via PID)
 
@@ -745,5 +780,5 @@ To add protected items (never managed):
 
 ---
 
-**Last Updated:** 2026-03-23
-**Version:** 1.1.0
+**Last Updated:** 2026-03-26
+**Version:** 1.2.0

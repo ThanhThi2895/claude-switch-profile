@@ -53,6 +53,21 @@ describe('Safety: Lock File', () => {
   });
 });
 
+describe('Safety: Claude Running Guard', () => {
+  it('assertClaudeNotRunning does nothing when Claude is not running', async () => {
+    const safety = await import('../src/safety.js');
+    assert.doesNotThrow(() => safety.assertClaudeNotRunning(() => false));
+  });
+
+  it('assertClaudeNotRunning throws when Claude is running', async () => {
+    const safety = await import('../src/safety.js');
+    assert.throws(
+      () => safety.assertClaudeNotRunning(() => true),
+      /Close all Claude sessions before switching profiles/
+    );
+  });
+});
+
 describe('Safety: Backup', () => {
   let tempDir, claudeDir;
 

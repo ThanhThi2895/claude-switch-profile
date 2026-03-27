@@ -13,6 +13,11 @@ export const SOURCE_FILE = 'source.json';
 export const LOCK_FILE = '.lock';
 export const BACKUP_DIR = '.backup';
 export const DEFAULT_PROFILE = 'default';
+export const PROFILES_SCHEMA_VERSION = 2;
+export const RUNTIME_DIR_NAME = '.runtime';
+export const RUNTIMES_DIR = join(PROFILES_DIR, RUNTIME_DIR_NAME);
+export const LAUNCH_CONFIG_ENV = 'CLAUDE_CONFIG_DIR';
+export const LAUNCH_ANTHROPIC_ENV_KEYS = ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'];
 
 // Items managed via copy (formerly symlinks — now always copied)
 export const MANAGED_ITEMS = [

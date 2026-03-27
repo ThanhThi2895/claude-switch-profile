@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { profileExists, getProfileDir, getActive } from '../profile-store.js';
+import { isWindows } from '../platform.js';
 import { saveItems } from '../item-manager.js';
 import { saveFiles, updateSettingsPaths } from '../file-operations.js';
 import { success, error, info } from '../output-helpers.js';
@@ -30,8 +31,12 @@ export const exportCommand = (name, options) => {
     info('Saved current state before export.');
   }
 
+  const tarArgs = isWindows
+    ? ['--force-local', '-czf', outputPath, '-C', profileDir.replace(/\\/g, '/'), '.']
+    : ['-czf', outputPath, '-C', profileDir, '.'];
+
   try {
-    execFileSync('tar', ['-czf', outputPath, '-C', profileDir, '.'], { stdio: 'pipe' });
+    execFileSync(isWindows ? 'tar.exe' : 'tar', tarArgs, { stdio: 'pipe' });
     success(`Profile "${name}" exported to ${outputPath}`);
   } catch (err) {
     if (err.code === 'ENOENT') {

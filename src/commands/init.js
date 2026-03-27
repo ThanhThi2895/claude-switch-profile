@@ -21,7 +21,7 @@ export const initCommand = () => {
   mkdirSync(profileDir, { recursive: true });
   writeFileSync(join(profileDir, SOURCE_FILE), '{}\n');
 
-  addProfile('default', { description: 'Vanilla Claude defaults' });
+  addProfile('default', { description: 'Vanilla Claude defaults', mode: 'legacy' });
   setActive('default');
 
   success('Initialization complete.');
