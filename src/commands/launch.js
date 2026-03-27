@@ -159,13 +159,10 @@ export const launchCommand = async (name, claudeArgs, options = {}) => {
       [LAUNCH_CONFIG_ENV]: runtimeDir,
     };
 
-    // Override settings: skip user-level ~/.claude/settings.json (which may
-    // contain a different profile's env), load only project+local sources,
-    // then inject the runtime settings via --settings flag.
-    const runtimeSettingsPath = join(runtimeDir, 'settings.json');
-    if (existsSync(runtimeSettingsPath)) {
-      args = ['--setting-sources', 'project,local', '--settings', runtimeSettingsPath, ...args];
-    }
+    // CLAUDE_CONFIG_DIR already redirects user-level config lookups to the
+    // runtime dir, so the "user" settings source reads {runtimeDir}/settings.json
+    // — which is the correct profile-specific settings. We do NOT exclude "user"
+    // because Claude Code gates skill/hook discovery on it being enabled.
 
     if (isTruthyDebugValue(process.env.CSP_DEBUG_LAUNCH_ENV)) {
       info(`Launch env diagnostics (${name}): ${formatLaunchEnvDiagnostics(diagnostics)}`);
