@@ -34,7 +34,7 @@ tests/*.test.js                → Core, CLI integration, safety
 - Runtime/session paths listed in `NEVER_TOUCH` are excluded from managed operations.
 - Backups are created by `createBackup()` and pruned to 2 most recent snapshots.
 - `csp use` now fails fast while Claude Code is running; internal legacy launch can still bypass via existing internal option.
-- Isolated launch resolves allowlisted `ANTHROPIC_*` deterministically with precedence (`settings.json env` > profile `.env` allowlist > parent env), strips inherited `CLAUDECODE`/`CLAUDE_CONFIG_DIR` and inherited `ANTHROPIC_*`, then sets runtime `CLAUDE_CONFIG_DIR`.
+- Isolated launch resolves allowlisted `ANTHROPIC_*` deterministically with precedence (`settings.json env` > profile `.env` allowlist > parent env), strips inherited `CLAUDECODE`/`CLAUDE_CONFIG_DIR` and inherited `ANTHROPIC_*`, then sets `CLAUDE_CONFIG_DIR` to the runtime root (no explicit flag-based overrides); Claude Code discovers config naturally from runtime directory.
 
 ## Notes from repomix-output.xml
 
@@ -43,4 +43,4 @@ tests/*.test.js                → Core, CLI integration, safety
 
 ---
 
-*Last updated: 2026-03-26*
+*Last updated: 2026-03-27*

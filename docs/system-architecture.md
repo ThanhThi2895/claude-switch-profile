@@ -164,7 +164,7 @@ Each command file exports a single async function matching the command name.
 #### launch.js
 **Flow:**
 1. Validate profile exists
-2. Default mode: acquire per-profile runtime lock, sync runtime root, resolve effective allowlisted `ANTHROPIC_*` launch env (`settings.json env` > `.env` allowlist > parent env), sanitize inherited launch env (`CLAUDECODE`/`CLAUDE_CONFIG_DIR`) and inherited `ANTHROPIC_*`, then set `CLAUDE_CONFIG_DIR`
+2. Default mode: acquire per-profile runtime lock, sync runtime root, resolve effective allowlisted `ANTHROPIC_*` launch env (`settings.json env` > `.env` allowlist > parent env), sanitize inherited launch env (`CLAUDECODE`/`CLAUDE_CONFIG_DIR`) and inherited `ANTHROPIC_*`, then set `CLAUDE_CONFIG_DIR` to runtime root (Claude Code auto-discovers config from this path)
 3. Optional `--legacy-global`: call `useCommand()` first
 4. Resolve Claude executable path, then spawn process with forwarded arguments (`where.exe` + Windows fallbacks when needed)
 5. Inherit stdio for interactive use
@@ -780,5 +780,5 @@ To add protected items (never managed):
 
 ---
 
-**Last Updated:** 2026-03-26
+**Last Updated:** 2026-03-27
 **Version:** 1.2.0
