@@ -111,6 +111,30 @@ const resolveSourceDir = (profileName) => {
   return getProfileDir(profileName);
 };
 
+const resolveItemSource = (profileName, item) => {
+  const profileDir = profileName === DEFAULT_PROFILE ? null : getProfileDir(profileName);
+  const active = getActive();
+  const profileIsActive = active === profileName;
+
+  // When profile is active or default, items live in CLAUDE_DIR
+  if (profileIsActive || profileName === DEFAULT_PROFILE) {
+    const claudePath = join(CLAUDE_DIR, item);
+    if (existsSync(claudePath)) return claudePath;
+    // Fallback: items may still be in profileDir (not yet moved by `use`)
+    if (profileDir) {
+      const profilePath = join(profileDir, item);
+      if (existsSync(profilePath)) return profilePath;
+    }
+    return null;
+  }
+
+  // Profile is NOT active — items should be in profileDir
+  const profilePath = join(profileDir, item);
+  if (existsSync(profilePath)) return profilePath;
+
+  return null;
+};
+
 export const syncStaticConfig = (profileName, runtimeDir) => {
   const sourceDir = resolveSourceDir(profileName);
   const staticItems = getStaticItems();
@@ -118,11 +142,11 @@ export const syncStaticConfig = (profileName, runtimeDir) => {
   mkdirSync(runtimeDir, { recursive: true });
 
   for (const item of staticItems) {
-    const src = join(sourceDir, item);
+    const src = resolveItemSource(profileName, item);
     const dest = join(runtimeDir, item);
 
-    if (!existsSync(src)) {
-      removePath(dest);
+    if (!src) {
+      // Source doesn't exist anywhere — skip (don't delete existing runtime items)
       continue;
     }
 
