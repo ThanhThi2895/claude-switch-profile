@@ -45,7 +45,7 @@ export const diffCommand = (profileA, profileB) => {
   // When reading from CLAUDE_DIR (active/default profile), filter to only managed items
   const active = getActive();
   const managedSet = new Set(ALL_MANAGED);
-  const listManagedFiles = (dir, name) => {
+  const listManagedFiles = (dir) => {
     const all = readdirSync(dir).filter((f) => f !== SOURCE_FILE);
     if ((dir === dirA && active === nameA) || (dir === dirB && active === nameB)) {
       return new Set(all.filter((f) => managedSet.has(f)));

@@ -122,7 +122,7 @@ export const createBackup = () => {
   const backupPath = join(backupBase, timestamp);
   mkdirSync(backupPath, { recursive: true });
 
-  // Save symlink targets
+  // Save managed item map
   const sourceMap = readCurrentItems();
   writeFileSync(join(backupPath, 'source.json'), JSON.stringify(sourceMap, null, 2) + '\n');
 
