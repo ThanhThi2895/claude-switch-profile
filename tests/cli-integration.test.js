@@ -201,9 +201,9 @@ describe('CLI Integration', () => {
 
     run('deactivate', envOverrides);
 
-    // Active marker should be cleared
+    // Deactivate resets to default profile (uses ~/.claude directly)
     const afterOutput = run('current', envOverrides);
-    assert.ok(afterOutput.includes('No active profile'));
+    assert.ok(afterOutput.includes('default'));
 
     // Profile should still exist
     assert.ok(existsSync(join(profilesDir, 'myprofile')));
@@ -238,7 +238,8 @@ describe('CLI Integration', () => {
     const output = run('current', envOverrides);
     assert.ok(output.includes('default'));
     assert.ok(output.includes('Active legacy profile'));
-    assert.ok(existsSync(join(profilesDir, 'default')));
+    // default is virtual — no physical directory required
+    assert.equal(existsSync(join(profilesDir, 'default')), false);
 
     const listOutput = run('list', envOverrides);
     assert.ok(listOutput.includes('[legacy]'));
