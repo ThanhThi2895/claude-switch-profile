@@ -18,6 +18,9 @@ import { initCommand } from '../src/commands/init.js';
 import { uninstallCommand } from '../src/commands/uninstall.js';
 import { launchCommand } from '../src/commands/launch.js';
 import { deactivateCommand } from '../src/commands/deactivate.js';
+import { toggleCommand } from '../src/commands/toggle.js';
+import { statusCommand } from '../src/commands/status.js';
+import { selectCommand } from '../src/commands/select.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
@@ -29,6 +32,11 @@ program
   .description('Claude Switch Profile — manage multiple Claude Code configurations')
   .version(pkg.version)
   .enablePositionalOptions();
+
+program
+  .command('select', { isDefault: true })
+  .description('Interactive profile selector (default when no command given)')
+  .action(selectCommand);
 
 program
   .command('init')
@@ -45,6 +53,11 @@ program
   .alias('ls')
   .description('List all profiles')
   .action(listCommand);
+
+program
+  .command('status')
+  .description('Show CSP status dashboard')
+  .action(statusCommand);
 
 program
   .command('create <name>')
@@ -64,8 +77,12 @@ program
   .description('Switch to a different profile')
   .option('--dry-run', 'Show what would change without executing')
   .option('--no-save', 'Skip saving current profile before switching')
-  .option('--force', 'Switch even if symlink targets are missing')
   .action(useCommand);
+
+program
+  .command('toggle')
+  .description('Switch to the previous profile')
+  .action(toggleCommand);
 
 program
   .command('delete <name>')
