@@ -3,6 +3,18 @@ import { LAUNCH_ANTHROPIC_ENV_KEYS, LAUNCH_CONFIG_ENV } from './constants.js';
 const RESERVED_PARENT_ENV_KEYS = new Set(['CLAUDECODE', LAUNCH_CONFIG_ENV]);
 const ANTHROPIC_KEY_SET = new Set(LAUNCH_ANTHROPIC_ENV_KEYS);
 
+// Claude Code internal env vars that carry session/auth state between instances.
+// These MUST be stripped to prevent a running default instance from leaking
+// credentials into a profile-specific launch.
+const CLAUDE_SESSION_ENV_PREFIXES = ['CLAUDE_CODE_OAUTH', 'CLAUDE_CODE_SESSION'];
+const CLAUDE_SESSION_ENV_EXACT = new Set([
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_REMOTE',
+  'CLAUDE_CODE_REMOTE_SESSION_ID',
+  'CLAUDE_CODE_CONTAINER_ID',
+  'CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR',
+]);
+
 const toUpperKey = (key) => String(key || '').toUpperCase();
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
@@ -42,7 +54,12 @@ const stripAnthropicKeys = (env = {}) => {
   const sanitized = {};
 
   for (const [key, value] of Object.entries(env || {})) {
-    if (toUpperKey(key).startsWith('ANTHROPIC_')) continue;
+    const upper = toUpperKey(key);
+    // Strip all ANTHROPIC_* keys (will be re-added from profile settings)
+    if (upper.startsWith('ANTHROPIC_')) continue;
+    // Strip Claude Code session/auth env vars to prevent cross-instance leakage
+    if (CLAUDE_SESSION_ENV_EXACT.has(upper)) continue;
+    if (CLAUDE_SESSION_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix))) continue;
     sanitized[key] = value;
   }
 

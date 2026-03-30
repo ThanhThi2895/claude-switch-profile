@@ -167,8 +167,14 @@ export const launchCommand = async (name, claudeArgs, options = {}) => {
     // — which is the correct profile-specific settings. We do NOT exclude "user"
     // because Claude Code gates skill/hook discovery on it being enabled.
 
+    // Always show launch diagnostics for debugging credential issues
+    info(`Launch env diagnostics (${name}): ${formatLaunchEnvDiagnostics(diagnostics)}`);
+    info(`CLAUDE_CONFIG_DIR=${launchEnv[LAUNCH_CONFIG_ENV]}`);
+    info(`ANTHROPIC_AUTH_TOKEN=${launchEnv.ANTHROPIC_AUTH_TOKEN ? launchEnv.ANTHROPIC_AUTH_TOKEN.slice(0, 8) + '...' : '(not set)'}`);
+    info(`ANTHROPIC_BASE_URL=${launchEnv.ANTHROPIC_BASE_URL || '(not set)'}`);
+
     if (isTruthyDebugValue(process.env.CSP_DEBUG_LAUNCH_ENV)) {
-      info(`Launch env diagnostics (${name}): ${formatLaunchEnvDiagnostics(diagnostics)}`);
+      info(`[DEBUG] Full launch env ANTHROPIC keys: ${JSON.stringify(Object.fromEntries(Object.entries(launchEnv).filter(([k]) => k.startsWith('ANTHROPIC_'))))}`);
     }
 
     info(`Launching isolated session for profile "${name}": claude ${args.join(' ')}`.trim());
