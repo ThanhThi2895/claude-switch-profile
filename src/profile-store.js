@@ -101,6 +101,19 @@ export const clearActive = () => {
   }
 };
 
+const PREVIOUS_FILE = '.previous';
+
+export const getPrevious = () => {
+  const prevPath = join(PROFILES_DIR, PREVIOUS_FILE);
+  if (!existsSync(prevPath)) return null;
+  return readFileSync(prevPath, 'utf-8').trim() || null;
+};
+
+export const setPrevious = (name) => {
+  ensureProfilesDir();
+  writeFileSync(join(PROFILES_DIR, PREVIOUS_FILE), name + '\n');
+};
+
 export const addProfile = (name, metadata = {}) => {
   const profiles = readProfiles();
   profiles[name] = normalizeProfileMeta(name, {
@@ -118,6 +131,7 @@ export const removeProfile = (name) => {
 };
 
 export const profileExists = (name) => {
+  if (name === DEFAULT_PROFILE) return true;
   return existsSync(getProfileDir(name));
 };
 

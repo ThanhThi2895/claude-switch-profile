@@ -7,7 +7,7 @@ import { ensureRuntimeInstance } from '../runtime-instance-manager.js';
 import { withRuntimeLock } from '../safety.js';
 import { error, info, warn } from '../output-helpers.js';
 import { isWindows } from '../platform.js';
-import { LAUNCH_CONFIG_ENV } from '../constants.js';
+import { LAUNCH_CONFIG_ENV, DEFAULT_PROFILE } from '../constants.js';
 import { buildEffectiveLaunchEnv, parseDotEnvLaunchEnv, parseSettingsLaunchEnv, sanitizeInheritedLaunchEnv } from '../launch-effective-env-resolver.js';
 
 const isTruthyDebugValue = (value) => {
@@ -145,6 +145,9 @@ export const launchCommand = async (name, claudeArgs, options = {}) => {
     // Legacy path: keep historical behavior for compatibility.
     await useCommand(name, { save: true, skipClaudeCheck: true });
     info(`Launching legacy/global mode: claude ${args.join(' ')}`.trim());
+  } else if (name === DEFAULT_PROFILE) {
+    // Default profile: launch Claude using ~/.claude natively — no runtime override
+    info(`Launching with default profile (using ~/.claude directly): claude ${args.join(' ')}`.trim());
   } else {
     const runtimeDir = await withRuntimeLock(name, async () => ensureRuntimeInstance(name));
     const { profileSettingsEnv, profileDotEnvEnv } = readProfileLaunchEnvSources(runtimeDir);

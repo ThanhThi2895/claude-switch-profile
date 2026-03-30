@@ -1,12 +1,11 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { ensureProfilesDir, getActive, addProfile, setActive, getProfileDir } from '../profile-store.js';
+import { existsSync } from 'node:fs';
+import { ensureProfilesDir, getActive, addProfile, setActive } from '../profile-store.js';
 import { success, info } from '../output-helpers.js';
-import { PROFILES_DIR, SOURCE_FILE } from '../constants.js';
+import { PROFILES_DIR } from '../constants.js';
 
 export const initCommand = () => {
-  if (existsSync(PROFILES_DIR) && getActive()) {
-    const active = getActive();
+  const active = getActive();
+  if (existsSync(PROFILES_DIR) && active) {
     info(`Already initialized. Active profile: "${active}"`);
     info(`Profiles directory: ${PROFILES_DIR}`);
     return;
@@ -14,12 +13,6 @@ export const initCommand = () => {
 
   ensureProfilesDir();
   info('Initializing Claude Switch Profile...');
-
-  // Create "default" as vanilla Claude — empty profile with no managed items.
-  // Switching to this profile removes all managed items, restoring Claude's built-in defaults.
-  const profileDir = getProfileDir('default');
-  mkdirSync(profileDir, { recursive: true });
-  writeFileSync(join(profileDir, SOURCE_FILE), '{}\n');
 
   addProfile('default', { description: 'Vanilla Claude defaults', mode: 'legacy' });
   setActive('default');

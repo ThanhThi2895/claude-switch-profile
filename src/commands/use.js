@@ -1,4 +1,4 @@
-import { getActive, setActive, profileExists, getProfileDir, getProfileMeta } from '../profile-store.js';
+import { getActive, setActive, profileExists, getProfileDir, getProfileMeta, setPrevious } from '../profile-store.js';
 import { moveItemsToProfile, moveItemsToClaude, saveItems, removeItems } from '../item-manager.js';
 import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths, moveDirsToProfile, moveDirsToClaude } from '../file-operations.js';
 import { validateProfile } from '../profile-validator.js';
@@ -7,6 +7,12 @@ import { success, error, info, warn } from '../output-helpers.js';
 import { CLAUDE_DIR, DEFAULT_PROFILE } from '../constants.js';
 
 export const useCommand = async (name, options) => {
+  // Warn about legacy behavior (skip if called internally from launch --legacy-global)
+  if (!options.skipClaudeCheck) {
+    warn('Note: "csp use" modifies ~/.claude directly (legacy mode).');
+    info('Prefer "csp launch <name>" for isolated sessions that never touch ~/.claude.');
+  }
+
   if (!profileExists(name)) {
     error(`Profile "${name}" does not exist. Run "csp list" to see available profiles.`);
     process.exit(1);
@@ -88,6 +94,9 @@ export const useCommand = async (name, options) => {
         throw err;
       }
     }
+
+    // Track previous profile for toggle
+    if (active) setPrevious(active);
 
     // 4. Update active marker
     setActive(name);
