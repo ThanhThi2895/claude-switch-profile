@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { profileExists, getProfileDir, getActive } from '../profile-store.js';
+import { profileExists, getProfileDir, getActive, ensureDefaultProfileSnapshot } from '../profile-store.js';
 import { isWindows } from '../platform.js';
 import { saveItems } from '../item-manager.js';
 import { saveFiles, updateSettingsPaths } from '../file-operations.js';
@@ -9,8 +9,12 @@ import { DEFAULT_PROFILE } from '../constants.js';
 
 export const exportCommand = (name, options) => {
   if (name === DEFAULT_PROFILE) {
-    error('Cannot export the default profile (it uses ~/.claude directly).');
-    process.exit(1);
+    try {
+      ensureDefaultProfileSnapshot();
+    } catch (err) {
+      error(err.message);
+      process.exit(1);
+    }
   }
 
   if (!profileExists(name)) {
@@ -22,7 +26,6 @@ export const exportCommand = (name, options) => {
   const output = options.output || `./${name}.csp.tar.gz`;
   const outputPath = resolve(output);
 
-  // If exporting active profile, save a copy first (non-destructive)
   const active = getActive();
   if (active === name) {
     saveItems(profileDir);

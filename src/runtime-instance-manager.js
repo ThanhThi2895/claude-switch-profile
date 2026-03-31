@@ -1,6 +1,17 @@
-import { existsSync, mkdirSync, cpSync, rmSync, lstatSync, statSync, copyFileSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  cpSync,
+  rmSync,
+  lstatSync,
+  statSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  readlinkSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
-import { MANAGED_ITEMS, COPY_ITEMS, COPY_DIRS, CLAUDE_DIR, DEFAULT_PROFILE } from './constants.js';
+import { MANAGED_ITEMS, COPY_ITEMS, COPY_DIRS, CLAUDE_DIR } from './constants.js';
 import {
   getActive,
   getProfileDir,
@@ -36,6 +47,12 @@ const shouldSyncDir = (src, dest) => {
 
         const srcPath = join(srcDir, srcEntry.name);
         const destPath = join(destDir, srcEntry.name);
+
+        if (srcEntry.isSymbolicLink()) {
+          if (!destEntry.isSymbolicLink()) return true;
+          if (readlinkSync(srcPath) !== readlinkSync(destPath)) return true;
+          continue;
+        }
 
         if (srcEntry.isDirectory()) {
           if (!destEntry.isDirectory()) return true;
@@ -99,36 +116,24 @@ const getStaticItems = () => {
 };
 
 const resolveSourceDir = (profileName) => {
-  if (profileName === DEFAULT_PROFILE) {
-    return CLAUDE_DIR;
-  }
-
   const active = getActive();
-  if (active === profileName) {
-    return CLAUDE_DIR;
-  }
-
-  return getProfileDir(profileName);
+  return active === profileName ? CLAUDE_DIR : getProfileDir(profileName);
 };
 
 const resolveItemSource = (profileName, item) => {
-  const profileDir = profileName === DEFAULT_PROFILE ? null : getProfileDir(profileName);
+  const profileDir = getProfileDir(profileName);
   const active = getActive();
   const profileIsActive = active === profileName;
 
-  // When profile is active or default, items live in CLAUDE_DIR
-  if (profileIsActive || profileName === DEFAULT_PROFILE) {
+  if (profileIsActive) {
     const claudePath = join(CLAUDE_DIR, item);
     if (existsSync(claudePath)) return claudePath;
-    // Fallback: items may still be in profileDir (not yet moved by `use`)
-    if (profileDir) {
-      const profilePath = join(profileDir, item);
-      if (existsSync(profilePath)) return profilePath;
-    }
+
+    const profilePath = join(profileDir, item);
+    if (existsSync(profilePath)) return profilePath;
     return null;
   }
 
-  // Profile is NOT active — items should be in profileDir
   const profilePath = join(profileDir, item);
   if (existsSync(profilePath)) return profilePath;
 
@@ -146,23 +151,18 @@ export const syncStaticConfig = (profileName, runtimeDir) => {
     const dest = join(runtimeDir, item);
 
     if (!src) {
-      // Source doesn't exist anywhere — skip (don't delete existing runtime items)
       continue;
     }
 
     const stat = lstatSync(src);
 
-    if (stat.isDirectory()) {
+    if (stat.isDirectory() && !stat.isSymbolicLink()) {
       if (!shouldSyncDir(src, dest)) continue;
-      removePath(dest);
-      cpSync(src, dest, { recursive: true });
-      continue;
     }
 
-    if (stat.isFile()) {
-      mkdirSync(dirname(dest), { recursive: true });
-      copyFileSync(src, dest);
-    }
+    removePath(dest);
+    mkdirSync(dirname(dest), { recursive: true });
+    cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
   }
 
   rewriteSettingsForRuntime(runtimeDir, sourceDir);

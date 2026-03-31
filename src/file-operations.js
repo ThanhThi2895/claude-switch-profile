@@ -1,5 +1,5 @@
-import { existsSync, copyFileSync, cpSync, unlinkSync, rmSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, cpSync, unlinkSync, rmSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { CLAUDE_DIR, COPY_ITEMS, COPY_DIRS } from './constants.js';
 
 // Rename-based dir move with EXDEV fallback
@@ -9,10 +9,16 @@ const moveDir = (src, dest) => {
     renameSync(src, dest);
   } catch (err) {
     if (err.code === 'EXDEV') {
-      cpSync(src, dest, { recursive: true });
+      cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
       rmSync(src, { recursive: true, force: true });
     } else throw err;
   }
+};
+
+const copyPathPreservingSymlink = (src, dest) => {
+  mkdirSync(dirname(dest), { recursive: true });
+  rmSync(dest, { recursive: true, force: true });
+  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
 };
 
 // Copy COPY_ITEMS files + COPY_DIRS dirs from ~/.claude to profileDir
@@ -22,16 +28,14 @@ export const saveFiles = (profileDir) => {
   for (const item of COPY_ITEMS) {
     const src = join(CLAUDE_DIR, item);
     if (existsSync(src)) {
-      copyFileSync(src, join(profileDir, item));
+      copyPathPreservingSymlink(src, join(profileDir, item));
     }
   }
 
   for (const dir of COPY_DIRS) {
     const src = join(CLAUDE_DIR, dir);
     if (existsSync(src)) {
-      const dest = join(profileDir, dir);
-      rmSync(dest, { recursive: true, force: true });
-      cpSync(src, dest, { recursive: true });
+      copyPathPreservingSymlink(src, join(profileDir, dir));
     }
   }
 };
@@ -41,16 +45,14 @@ export const restoreFiles = (profileDir) => {
   for (const item of COPY_ITEMS) {
     const src = join(profileDir, item);
     if (existsSync(src)) {
-      copyFileSync(src, join(CLAUDE_DIR, item));
+      copyPathPreservingSymlink(src, join(CLAUDE_DIR, item));
     }
   }
 
   for (const dir of COPY_DIRS) {
     const src = join(profileDir, dir);
     if (existsSync(src)) {
-      const dest = join(CLAUDE_DIR, dir);
-      rmSync(dest, { recursive: true, force: true });
-      cpSync(src, dest, { recursive: true });
+      copyPathPreservingSymlink(src, join(CLAUDE_DIR, dir));
     }
   }
 };
