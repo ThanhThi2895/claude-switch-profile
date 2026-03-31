@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { saveFiles, updateSettingsPaths } from './file-operations.js';
+import { copyItems } from './item-manager.js';
 import {
   PROFILES_DIR,
   ACTIVE_FILE,
@@ -51,6 +53,15 @@ const normalizeProfiles = (raw) => {
   }
 
   return normalized;
+};
+
+const backfillDefaultProfileSnapshot = () => {
+  const profileDir = getProfileDir(DEFAULT_PROFILE);
+  mkdirSync(profileDir, { recursive: true });
+  copyItems(profileDir);
+  saveFiles(profileDir);
+  updateSettingsPaths(profileDir, 'save');
+  return profileDir;
 };
 
 export const readProfiles = () => {
@@ -130,12 +141,27 @@ export const removeProfile = (name) => {
   writeProfiles(profiles);
 };
 
+export const ensureDefaultProfileSnapshot = () => {
+  const profileDir = getProfileDir(DEFAULT_PROFILE);
+  if (existsSync(profileDir)) return profileDir;
+
+  const profiles = readProfiles();
+  if (!profiles[DEFAULT_PROFILE]) return profileDir;
+
+  const active = getActive();
+  if (active && active !== DEFAULT_PROFILE) {
+    throw new Error(
+      `Default profile snapshot is missing for this legacy install while "${active}" is active. CSP cannot safely recreate "default" from the current ~/.claude state. Switch back to your intended default baseline, then retry.`,
+    );
+  }
+
+  return backfillDefaultProfileSnapshot();
+};
+
 export const profileExists = (name) => {
-  if (name === DEFAULT_PROFILE) return true;
   return existsSync(getProfileDir(name));
 };
 
-// Validate profile name — prevent path traversal and injection
 const SAFE_NAME = /^[a-zA-Z0-9_-]+$/;
 export const validateName = (name) => {
   if (!name || !SAFE_NAME.test(name)) {
@@ -170,31 +196,28 @@ export const updateProfileMeta = (name, patch) => {
 
 export const markRuntimeInitialized = (name, runtimeDir) => {
   const now = new Date().toISOString();
-  return updateProfileMeta(name, {
+  return updateProfileMeta(name, (meta) => ({
+    ...meta,
     runtimeDir,
     runtimeInitializedAt: now,
     lastLaunchAt: now,
-    mode: 'account-session',
-  });
+    mode: name === DEFAULT_PROFILE ? meta.mode : 'account-session',
+  }));
 };
 
 export const markProfileLaunched = (name) => {
-  return updateProfileMeta(name, {
+  return updateProfileMeta(name, (meta) => ({
+    ...meta,
     lastLaunchAt: new Date().toISOString(),
-    mode: 'account-session',
-  });
+    mode: name === DEFAULT_PROFILE ? meta.mode : 'account-session',
+  }));
 };
 
 export const listProfileNames = () => {
   return Object.keys(readProfiles());
 };
 
-// Returns the directory containing a profile's actual files.
-// If profile is active, items were moved to CLAUDE_DIR during switch.
-// If profile is not active, items are in profileDir.
 export const getEffectiveDir = (name) => {
-  if (name === DEFAULT_PROFILE) return CLAUDE_DIR;
   const active = getActive();
-  if (active === name) return CLAUDE_DIR;
-  return getProfileDir(name);
+  return active === name ? CLAUDE_DIR : getProfileDir(name);
 };

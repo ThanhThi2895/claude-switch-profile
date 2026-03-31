@@ -53,13 +53,13 @@ csp --help
 
 ### 1. Initialize
 
-Capture your current Claude Code setup as the default profile:
+Capture your current Claude Code setup as the physical `default` profile snapshot:
 
 ```bash
 csp init
 ```
 
-This creates `~/.claude-profiles/default/` containing your current configuration.
+This creates `~/.claude-profiles/default/` from the current managed contents of `~/.claude`. Protected and session/runtime files remain excluded.
 
 ### 2. Create Additional Profiles
 
@@ -229,10 +229,11 @@ csp save
 ```
 
 **Behavior:**
-- Captures all managed items and files from `~/.claude`
-- Overwrites profile's `source.json` and file copies
-- Useful after modifying rules, settings, or other configuration
-- Requires active profile (run `csp create` if none exists)
+- Captures all managed items and copied files/directories from `~/.claude`
+- Overwrites the active profile snapshot (`source.json` plus copied content)
+- When `default` is active, updates the physical `default` snapshot like any other profile
+- Protected and session/runtime files remain excluded
+- Requires an active profile
 
 ---
 
@@ -274,11 +275,12 @@ csp use legacy --force
 **Behavior:**
 1. Validates target profile exists and profile structure is valid
 2. Refuses to switch while Claude Code is running (legacy/global switching mutates `~/.claude` directly)
-3. If active profile exists and `--no-save` is not set: saves current state
-4. Removes managed items/files from `~/.claude` as needed
-5. Restores target profile configuration into `~/.claude`
+3. If the active profile exists and `--no-save` is not set: saves its current snapshot first
+4. Removes managed items/files from `~/.claude`
+5. Restores the target profile snapshot into `~/.claude` — including `default`
 6. Updates active marker
-7. **Important:** Claude Code session must be restarted for changes to apply
+7. On older installs missing `profiles/default`, CSP only backfills that snapshot when the active profile is `default` or no active profile is set; otherwise it fails closed with repair guidance
+8. **Important:** Claude Code session must be restarted for changes to apply
 
 ---
 
@@ -340,8 +342,10 @@ csp export staging -o ~/backups/claude-staging.tar.gz
 ```
 
 **Behavior:**
-- Creates tar.gz archive of entire profile directory
-- Includes `source.json` (managed item map) and copied profile files/directories
+- Creates tar.gz archive of the profile snapshot directory
+- Includes `source.json` plus copied profile files/directories
+- Exporting `default` works like any other profile snapshot
+- Protected and session/runtime files remain excluded from the archive
 - Useful for backup, sharing, or version control
 
 ---
@@ -422,7 +426,7 @@ File differences:
 
 ### deactivate
 
-Deactivate the currently active non-default profile and clear `.active` without switching to another profile.
+Deactivate the currently active non-default profile by switching back to the physical `default` snapshot.
 
 ```bash
 csp deactivate
@@ -433,9 +437,10 @@ csp deactivate
 
 **Behavior:**
 1. Exits early if no active profile or active profile is `default`
-2. Optionally saves active profile state
-3. Removes managed items/files from `~/.claude`
-4. Clears active marker
+2. Delegates to `csp use default`
+3. Optionally saves the current non-default profile state
+4. Restores the physical `default` snapshot into `~/.claude`
+5. Marks `default` as the active legacy profile
 
 ---
 
@@ -471,13 +476,15 @@ csp launch work --legacy-global
 
 **Behavior (default isolated mode):**
 1. Validates target profile exists
-2. Prepares per-profile runtime under `~/.claude-profiles/.runtime/<name>`
-3. Resolves effective allowlisted `ANTHROPIC_*` launch env (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) with precedence: `settings.json env` > profile `.env` allowlist > parent process env
-4. Strips inherited `CLAUDECODE`, inherited `CLAUDE_CONFIG_DIR`, and inherited `ANTHROPIC_*` before applying resolved allowlisted values
-5. Spawns `claude` with `CLAUDE_CONFIG_DIR=<runtimeDir>`
-6. Inherits stdin/stdout/stderr for interactive use
-7. Forwards Claude's exit code
-8. Keeps `.active` unchanged and never mutates global `~/.claude`
+2. Ensures the profile snapshot exists; for legacy installs missing `default/`, guarded backfill only runs when the active profile is `default` or no active profile is set
+3. Prepares per-profile runtime under `~/.claude-profiles/.runtime/<name>`
+4. Resolves effective allowlisted `ANTHROPIC_*` launch env (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) with precedence: `settings.json env` > profile `.env` allowlist > parent process env
+5. Strips inherited `CLAUDECODE`, inherited `CLAUDE_CONFIG_DIR`, inherited `ANTHROPIC_*`, and Claude session env vars before applying resolved allowlisted values
+6. Spawns `claude` with `CLAUDE_CONFIG_DIR=<runtimeDir>`
+7. Inherits stdin/stdout/stderr for interactive use
+8. Forwards Claude's exit code
+9. Keeps `.active` unchanged and never mutates global `~/.claude`
+10. Launching `default` preserves its `legacy` mode metadata even though it uses an isolated runtime snapshot
 
 `ANTHROPIC_*` keys currently in isolated launch scope:
 - `ANTHROPIC_AUTH_TOKEN`
@@ -520,9 +527,10 @@ csp uninstall --force
 
 **Behavior:**
 1. Creates a final backup at `~/.claude-profiles/.backup/`
-2. Restores the active profile (or `--profile` choice) to `~/.claude`
-3. Removes `~/.claude-profiles/` entirely
-4. Prints reminder to run `npm uninstall -g claude-switch-profile`
+2. Restores the active profile by default, or the `--profile` choice, to `~/.claude`
+3. If `default` is restored, it uses the physical `default` snapshot like any other profile
+4. Removes `~/.claude-profiles/` entirely
+5. Prints reminder to run `npm uninstall -g claude-switch-profile`
 
 ---
 
@@ -583,7 +591,7 @@ Profiles are stored in `~/.claude-profiles/`:
 - `history.jsonl`, `metadata.json`, `stats-cache.json`, `active-plan`
 - `backups/`, `command-archive/`, `commands-archived/`
 - `plans/`, `todos/`, `tasks/`, `teams/`, `agent-memory/`, `file-history/`, `shell-snapshots/`
-- All other session-specific data
+- All other protected or session-specific data
 
 ### Legacy vs Isolated Launch Modes
 

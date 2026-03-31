@@ -1,8 +1,9 @@
-import { getActive, setActive } from '../profile-store.js';
+import { getActive } from '../profile-store.js';
 import { success, info } from '../output-helpers.js';
 import { DEFAULT_PROFILE } from '../constants.js';
+import { useCommand } from './use.js';
 
-export const deactivateCommand = async () => {
+export const deactivateCommand = async (options = {}) => {
   const active = getActive();
   if (!active) {
     info('No active profile to deactivate.');
@@ -10,13 +11,10 @@ export const deactivateCommand = async () => {
   }
 
   if (active === DEFAULT_PROFILE) {
-    info('Default profile uses ~/.claude directly. Nothing to deactivate.');
+    info('Default profile is already active.');
     return;
   }
 
-  // Just reset to default — never touch ~/.claude
-  setActive(DEFAULT_PROFILE);
-
-  success(`Profile "${active}" deactivated. Reset to default.`);
-  info('~/.claude was not modified.');
+  await useCommand(DEFAULT_PROFILE, options);
+  success(`Profile "${active}" deactivated.`);
 };

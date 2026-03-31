@@ -2,6 +2,17 @@
 
 All notable changes to `claude-switch-profile` are documented here.
 
+## [Unreleased] - 2026-03-31
+
+### Changed
+- `default` is now a physical profile snapshot created by `csp init` instead of a virtual pass-through.
+- `csp save`, `csp use`, `csp export`, `csp launch`, and `csp uninstall` now operate on the `default` snapshot the same way they do for other profiles.
+- Legacy installs missing `~/.claude-profiles/default` only backfill that snapshot when the active profile is `default` or no active profile is set; if a non-default profile is active, CSP fails closed with repair guidance.
+- Protected and session/runtime files remain excluded from snapshot capture, export, isolated runtime sync, and restore flows.
+- Launching `default` keeps its metadata mode as `legacy` instead of drifting to `account-session`.
+
+---
+
 ## [1.3.0] - 2026-03-28
 
 ### Added

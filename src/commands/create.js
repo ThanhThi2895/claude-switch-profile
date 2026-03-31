@@ -1,4 +1,4 @@
-import { mkdirSync, cpSync, existsSync, statSync, writeFileSync, copyFileSync, readdirSync, lstatSync } from 'node:fs';
+import { mkdirSync, cpSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addProfile, getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
 import { saveFiles, updateSettingsPaths } from '../file-operations.js';
@@ -20,7 +20,7 @@ export const createCommand = (name, options) => {
       process.exit(1);
     }
     const sourceDir = getProfileDir(options.from);
-    cpSync(sourceDir, profileDir, { recursive: true });
+    cpSync(sourceDir, profileDir, { recursive: true, verbatimSymlinks: true });
     info(`Cloned from profile "${options.from}"`);
   } else if (options.source) {
     // Create from a specific .agents/ directory (or any kit directory)
@@ -39,11 +39,7 @@ export const createCommand = (name, options) => {
       if (existsSync(target)) {
         const dest = join(profileDir, item);
         try {
-          if (statSync(target).isDirectory()) {
-            cpSync(target, dest, { recursive: true });
-          } else {
-            copyFileSync(target, dest);
-          }
+          cpSync(target, dest, { recursive: true, verbatimSymlinks: true });
           sourceMap[item] = dest;
         } catch { /* skip */ }
       }
@@ -60,11 +56,7 @@ export const createCommand = (name, options) => {
       if (!existsSync(src)) continue;
       try {
         const dest = join(profileDir, item);
-        if (statSync(src).isDirectory()) {
-          cpSync(src, dest, { recursive: true });
-        } else {
-          copyFileSync(src, dest);
-        }
+        cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
         sourceMap[item] = dest;
       } catch { /* skip */ }
     }
@@ -92,20 +84,11 @@ export const createCommand = (name, options) => {
 
       const src = join(CLAUDE_DIR, entry);
       try {
-        const stat = lstatSync(src);
+        const dest = join(profileDir, entry);
+        cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
 
-        if (stat.isDirectory()) {
-          const dest = join(profileDir, entry);
-          cpSync(src, dest, { recursive: true });
-          if (MANAGED_ITEMS.includes(entry)) {
-            sourceMap[entry] = dest;
-          }
-        } else if (stat.isFile()) {
-          const dest = join(profileDir, entry);
-          copyFileSync(src, dest);
-          if (MANAGED_ITEMS.includes(entry)) {
-            sourceMap[entry] = dest;
-          }
+        if (MANAGED_ITEMS.includes(entry)) {
+          sourceMap[entry] = dest;
         }
       } catch { /* skip unreadable items */ }
     }

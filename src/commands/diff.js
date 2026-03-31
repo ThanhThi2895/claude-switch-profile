@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
-import { profileExists, getActive, getEffectiveDir } from '../profile-store.js';
+import { profileExists, getActive, getEffectiveDir, getProfileDir } from '../profile-store.js';
 import { SOURCE_FILE, ALL_MANAGED } from '../constants.js';
 import { error, info } from '../output-helpers.js';
 
@@ -33,12 +33,14 @@ export const diffCommand = (profileA, profileB) => {
 
   const dirA = getEffectiveDir(nameA);
   const dirB = getEffectiveDir(nameB);
+  const sourceDirA = join(getProfileDir(nameA), SOURCE_FILE);
+  const sourceDirB = join(getProfileDir(nameB), SOURCE_FILE);
 
   console.log(`\n${chalk.bold('Comparing:')} ${chalk.cyan(nameA)} ↔ ${chalk.cyan(nameB)}\n`);
 
-  // Compare source.json (managed item sources)
-  const sourceA = readJsonSafe(join(dirA, SOURCE_FILE));
-  const sourceB = readJsonSafe(join(dirB, SOURCE_FILE));
+  // Compare source.json from stored profile dirs, not live ~/.claude state
+  const sourceA = readJsonSafe(sourceDirA);
+  const sourceB = readJsonSafe(sourceDirB);
   diffObject('Managed item sources (source.json)', sourceA, sourceB, nameA, nameB);
 
   // Compare files that exist in either profile

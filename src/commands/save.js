@@ -1,7 +1,7 @@
-import { getActive, profileExists, getProfileDir } from '../profile-store.js';
+import { getActive, profileExists, getProfileDir, ensureDefaultProfileSnapshot } from '../profile-store.js';
 import { saveItems } from '../item-manager.js';
 import { saveFiles, updateSettingsPaths } from '../file-operations.js';
-import { success, error, info } from '../output-helpers.js';
+import { success, error } from '../output-helpers.js';
 import { DEFAULT_PROFILE } from '../constants.js';
 
 export const saveCommand = () => {
@@ -12,8 +12,12 @@ export const saveCommand = () => {
   }
 
   if (active === DEFAULT_PROFILE) {
-    info('Default profile uses ~/.claude directly. No save needed.');
-    return;
+    try {
+      ensureDefaultProfileSnapshot();
+    } catch (err) {
+      error(err.message);
+      process.exit(1);
+    }
   }
 
   if (!profileExists(active)) {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, lstatSync, copyFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync, lstatSync, renameSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { CLAUDE_DIR, MANAGED_ITEMS, SOURCE_FILE } from './constants.js';
 
@@ -13,7 +13,7 @@ const moveItem = (src, dest) => {
     renameSync(src, dest);
   } catch (err) {
     if (err.code === 'EXDEV') {
-      cpSync(src, dest, { recursive: true, filter: skipHeavyDirs });
+      cpSync(src, dest, { recursive: true, filter: skipHeavyDirs, verbatimSymlinks: true });
       rmSync(src, { recursive: true, force: true });
     } else throw err;
   }
@@ -49,6 +49,12 @@ export const removeItems = () => {
   }
 };
 
+const copyItemPreservingSymlink = (src, dest) => {
+  mkdirSync(dirname(dest), { recursive: true });
+  rmSync(dest, { recursive: true, force: true });
+  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
+};
+
 // Copy managed items from ~/.claude into profileDir, write source.json manifest (non-destructive)
 export const copyItems = (profileDir) => {
   const sourceMap = {};
@@ -58,14 +64,7 @@ export const copyItems = (profileDir) => {
       if (!existsSync(itemPath)) continue;
 
       const dest = join(profileDir, item);
-      const stat = lstatSync(itemPath);
-
-      if (stat.isDirectory()) {
-        rmSync(dest, { recursive: true, force: true });
-        cpSync(itemPath, dest, { recursive: true });
-      } else if (stat.isFile()) {
-        copyFileSync(itemPath, dest);
-      }
+      copyItemPreservingSymlink(itemPath, dest);
       sourceMap[item] = dest;
     } catch {
       // Not readable — skip
@@ -99,12 +98,7 @@ export const restoreItems = (profileDir) => {
     // Copy from profile (or external legacy path) into ~/.claude
     if (existsSync(srcPath)) {
       try {
-        const stat = lstatSync(srcPath);
-        if (stat.isDirectory()) {
-          cpSync(srcPath, dest, { recursive: true });
-        } else if (stat.isFile()) {
-          copyFileSync(srcPath, dest);
-        }
+        copyItemPreservingSymlink(srcPath, dest);
       } catch {
         // skip unreadable
       }

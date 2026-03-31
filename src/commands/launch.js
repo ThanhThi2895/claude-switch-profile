@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { profileExists } from '../profile-store.js';
+import { profileExists, ensureDefaultProfileSnapshot } from '../profile-store.js';
 import { useCommand } from './use.js';
 import { ensureRuntimeInstance } from '../runtime-instance-manager.js';
 import { withRuntimeLock } from '../safety.js';
@@ -128,6 +128,15 @@ export const stripInheritedLaunchEnv = (env = process.env) => {
 };
 
 export const launchCommand = async (name, claudeArgs, options = {}) => {
+  if (name === DEFAULT_PROFILE) {
+    try {
+      ensureDefaultProfileSnapshot();
+    } catch (err) {
+      error(err.message);
+      process.exit(1);
+    }
+  }
+
   if (!profileExists(name)) {
     error(`Profile "${name}" does not exist. Run "csp list" to see available profiles.`);
     process.exit(1);
@@ -142,12 +151,8 @@ export const launchCommand = async (name, claudeArgs, options = {}) => {
   let launchEnv = { ...process.env };
 
   if (options.legacyGlobal || legacyFromArgs) {
-    // Legacy path: keep historical behavior for compatibility.
     await useCommand(name, { save: true, skipClaudeCheck: true });
     info(`Launching legacy/global mode: claude ${args.join(' ')}`.trim());
-  } else if (name === DEFAULT_PROFILE) {
-    // Default profile: launch Claude using ~/.claude natively — no runtime override
-    info(`Launching with default profile (using ~/.claude directly): claude ${args.join(' ')}`.trim());
   } else {
     const runtimeDir = await withRuntimeLock(name, async () => ensureRuntimeInstance(name));
     const { profileSettingsEnv, profileDotEnvEnv } = readProfileLaunchEnvSources(runtimeDir);
