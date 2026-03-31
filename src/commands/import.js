@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { addProfile, profileExists, getProfileDir, ensureProfilesDir } from '../profile-store.js';
+import { isWindows } from '../platform.js';
 import { validateProfile } from '../profile-validator.js';
 import { success, error, warn } from '../output-helpers.js';
 
@@ -24,10 +25,18 @@ export const importCommand = (file, options) => {
   const profileDir = getProfileDir(name);
   mkdirSync(profileDir, { recursive: true });
 
+  const tarArgs = isWindows
+    ? ['--force-local', '-xzf', filePath, '-C', profileDir.replace(/\\/g, '/')]
+    : ['-xzf', filePath, '-C', profileDir];
+
   try {
-    execFileSync('tar', ['-xzf', filePath, '-C', profileDir], { stdio: 'pipe' });
+    execFileSync(isWindows ? 'tar.exe' : 'tar', tarArgs, { stdio: 'pipe' });
   } catch (err) {
-    error(`Failed to extract: ${err.message}`);
+    if (err.code === 'ENOENT') {
+      error('tar command not found. On Windows, tar is available on Windows 10+.');
+    } else {
+      error(`Failed to extract: ${err.message}`);
+    }
     process.exit(1);
   }
 

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Claude Switch Profile (CSP)** is a Node.js CLI tool that enables developers to manage multiple isolated Claude Code configurations on a single machine. Each profile maintains separate symlinked rules/agents/skills, copied settings/environment variables, and custom commands—allowing effortless switching between different development setups without conflicts.
+**Claude Switch Profile (CSP)** is a Node.js CLI tool that enables developers to manage multiple isolated Claude Code configurations on a single machine. Each profile maintains separate managed items (rules/agents/skills), copied settings/environment variables, and custom commands—allowing effortless switching between different development setups without conflicts.
 
 **Problem Solved:** Developers frequently need multiple Claude Code configurations (work vs. personal, experimental vs. production, client A vs. client B). Manual switching is error-prone and time-consuming. CSP automates this with profile management, version control, export/import, and safety features.
 
@@ -27,6 +27,9 @@ Enable developers to:
 - **Use**: Switch to a different profile with auto-save and validation
 - **Save**: Manually save active profile state
 - **Delete**: Remove a profile (with confirmation)
+- **Deactivate**: Clear active profile marker and restore managed items to blank state
+- **Launch**: Switch to a profile and immediately launch Claude Code (forwarding extra args)
+- **Uninstall**: Remove CSP and restore a chosen profile to `~/.claude` before wiping all data
 
 #### 2. Profile Sharing
 - **Export**: Package profile as tar.gz archive
@@ -37,7 +40,7 @@ Enable developers to:
 
 ### Managed Items
 
-#### Symlinked Items (pointed to external locations)
+#### Managed Static Items (managed in profiles)
 - `CLAUDE.md` — Project configuration
 - `rules/` — Development guidelines
 - `agents/` — Agent scripts
@@ -46,17 +49,25 @@ Enable developers to:
 - `statusline.cjs` — Custom statusline
 - `.luna.json` — Luna config
 
-**Rationale:** These often live in git repos and may be shared across profiles.
+**Rationale:** These items are managed in profiles for isolation and portability.
 
 #### Copied Files (environment-specific)
 - `settings.json` — Editor settings
 - `.env` — Environment variables
 - `.ck.json` — Custom settings
 - `.ckignore` — Ignore patterns
+- `.mcp.json` — MCP configuration
+- `.mcp.json.example` — MCP template
+- `.env.example` — Environment template
+- `.gitignore` — Git ignore rules
 
 #### Copied Directories
 - `commands/` — Custom commands
 - `plugins/` — Custom plugins
+- `workflows/` — Workflow files
+- `scripts/` — Script utilities
+- `output-styles/` — Output styling
+- `schemas/` — JSON schemas
 
 #### Protected Items (never touched)
 - Runtime data: `.credentials.json`, `projects/`, `cache/`, `history.jsonl`
@@ -69,7 +80,7 @@ Enable developers to:
 |---|---|
 | **Performance** | Profile switching < 2 seconds (excluding Claude restart) |
 | **Data Safety** | Auto-backups on every switch; lock file prevents concurrent ops |
-| **Portability** | Linux/macOS/Unix; Windows with WSL2 |
+| **Portability** | Linux/macOS/Unix; Windows 10+ (native junctions, no admin required) |
 | **Reliability** | Validates profile structure; detects stale locks; restores from backup on error |
 | **Testability** | Env var overrides (CSP_CLAUDE_DIR, CSP_PROFILES_DIR) for isolated testing |
 | **Usability** | Intuitive CLI with clear error messages; --dry-run for preview |
@@ -103,12 +114,15 @@ Enable developers to:
 | `bin/csp.js` | CLI entry point; command routing |
 | `src/commands/*.js` | Individual command implementations |
 | `profile-store.js` | Profile metadata read/write (profiles.json, .active) |
-| `symlink-manager.js` | Symlink operations (read/create/restore) |
+| `runtime-instance-manager.js` | Runtime isolation and syncing for launch |
+| `item-manager.js` | Managed item copy/move operations |
+| `launch-effective-env-resolver.js` | Environment variable resolution for launch |
 | `file-operations.js` | File and directory copy/restore |
 | `safety.js` | Locking, backups, process detection, validation |
 | `profile-validator.js` | Profile structure validation |
 | `output-helpers.js` | Console output (colors, symbols) |
 | `constants.js` | Configuration paths and managed items lists |
+| `platform.js` | Cross-platform compatibility (Windows junctions, process detection) |
 
 ### Profile Switching Flow
 
@@ -117,16 +131,15 @@ User runs: csp use <profile>
     ↓
 CLI validates profile exists & structure valid
     ↓
-(Optional) Validate symlink targets accessible
-    ↓
 (If --dry-run) Show changes and exit
     ↓
 Detect if Claude running (warn user)
+(Windows: uses tasklist; Unix: uses pgrep)
     ↓
 Acquire lock file (prevent concurrent ops)
     ↓
 Save active profile state:
-  - Write symlink targets to source.json
+  - Write managed item map to source.json
   - Copy mutable files from ~/.claude
     ↓
 Create timestamped backup of current state
@@ -135,7 +148,7 @@ Remove all managed items from ~/.claude
     ↓
 Restore target profile:
   - Read source.json
-  - Create symlinks in ~/.claude
+  - Manage items in ~/.claude
   - Copy files from profile to ~/.claude
     ↓
 Update .active marker
@@ -201,7 +214,7 @@ Remind user to restart Claude Code
 - Implement profile-validator.js (validation logic)
 
 ### Phase 3: CLI Commands
-- Implement all 9 commands (init, current, list, create, save, use, delete, export, import, diff)
+- Implement all 13 commands (init, current, list, create, save, use, delete, export, import, diff, deactivate, launch, uninstall)
 - Wire commands into CLI framework
 - Implement error handling and messaging
 
@@ -220,9 +233,9 @@ Remind user to restart Claude Code
 ## Success Criteria
 
 ### Functional
-- [x] All 9 commands implemented and working
+- [x] All 13 commands implemented and working
 - [x] Profiles correctly capture/restore state
-- [x] Symlinks created/restored properly
+- [x] Managed items properly handled (copy/move)
 - [x] Files copied/restored correctly
 - [x] Metadata persisted accurately
 - [x] Export/import works end-to-end
@@ -266,7 +279,7 @@ Remind user to restart Claude Code
 
 ### Hard Dependencies
 - Node.js >= 18.0.0
-- POSIX-compliant system (symlinks, tar, pgrep)
+- POSIX or Windows 10+ (symlinks/junctions, tar, pgrep/tasklist)
 - Writable home directory
 
 ### External Dependencies (npm)
@@ -274,10 +287,10 @@ Remind user to restart Claude Code
 - `commander@^14.0.3` — CLI argument parsing
 
 ### Constraints
-- No Windows native support (WSL2 only)
+- Windows uses NTFS junctions and `tasklist` for process detection
 - Profile switching requires Claude Code restart
 - Cannot manage `.credentials.json` (left untouched for security)
-- Symlink targets must exist when restoring (unless --force)
+- Managed items must exist in source profile when restoring (unless handled gracefully)
 
 ## Risk Assessment
 
@@ -285,7 +298,7 @@ Remind user to restart Claude Code
 |---|---|---|---|
 | Accidental profile deletion | Medium | High | Confirmation prompt + auto-backups |
 | Concurrent profile switches | Low | High | Lock file with PID validation |
-| Missing symlink targets | Medium | Medium | Validation check + --force override |
+| Missing managed item sources | Medium | Medium | Graceful skip + warning message |
 | Corrupted metadata | Low | High | JSON validation + backups |
 | User forgets to restart Claude | High | Medium | Warning message on switch |
 
@@ -298,7 +311,7 @@ Remind user to restart Claude Code
 5. **Snapshots** — Time-travel through profile history
 6. **Templates** — Pre-configured profile templates
 7. **Hooks** — Custom scripts on profile switch
-8. **Windows Support** — Native Windows symlink handling
+
 
 ## Development Roadmap
 
@@ -321,14 +334,14 @@ Remind user to restart Claude Code
 
 | Term | Definition |
 |---|---|
-| **Profile** | A snapshot of Claude Code configuration at `~/.claude` (symlinks + files) |
+| **Profile** | A snapshot of Claude Code configuration at `~/.claude` (managed items + files) |
 | **Active Profile** | The currently loaded profile, determined by `.active` marker |
-| **Symlink Items** | Configuration items pointing to external locations (rules, agents, skills) |
+| **Managed Items** | Configuration items controlled by CSP (rules, agents, skills, hooks, etc.) |
 | **Copy Items** | Mutable files copied into profile (settings.json, .env) |
 | **Backup** | Timestamped copy of managed items before switching |
 | **Lock File** | PID-based marker preventing concurrent profile operations |
 | **Dry Run** | Preview mode showing changes without executing them |
-| **Source Map** | JSON object mapping symlink item names to target paths |
+| **Source Map** | JSON object mapping managed item names to target paths |
 
 ## Contact & Support
 
@@ -338,6 +351,6 @@ Remind user to restart Claude Code
 
 ---
 
-**Last Updated:** 2026-03-11
-**Version:** 1.0.0
+**Last Updated:** 2026-03-27
+**Version:** 1.2.0
 **Status:** Complete

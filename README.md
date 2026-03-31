@@ -4,7 +4,7 @@
 [![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A CLI tool for managing multiple Claude Code configurations and profiles. Effortlessly switch between different development setups, each with their own rules, agents, skills, and settings.
+A CLI tool for managing multiple Claude Code configurations and profiles. Use legacy global switching (`csp use`) or concurrent isolated account sessions (`csp launch`) with per-profile runtime roots.
 
 ## Overview
 
@@ -46,7 +46,8 @@ csp --help
 ### Requirements
 
 - Node.js >= 18.0.0
-- Unix/Linux/macOS (uses symlinks and POSIX tools)
+- Unix/Linux/macOS
+- Windows 10+
 
 ## Quick Start
 
@@ -146,7 +147,7 @@ csp init
 
 ### current
 
-Display the currently active profile.
+Display the currently active **legacy** profile and isolated launch metadata (if present).
 
 ```bash
 csp current
@@ -154,8 +155,10 @@ csp current
 
 **Output:**
 ```
-✓ Active profile: default
+✓ Active legacy profile: default
 ℹ Location: /home/user/.claude-profiles/default
+ℹ Last isolated launch: 2026-03-26T14:45:00.000Z
+ℹ Isolated runtime: /home/user/.claude-profiles/.runtime/default
 ```
 
 ---
@@ -171,8 +174,8 @@ csp ls
 
 **Output format:**
 ```
- * profile-name — optional description (YYYY-MM-DD)
-   other-profile (YYYY-MM-DD)
+ * profile-name — optional description (YYYY-MM-DD) [legacy|account-session]
+   other-profile (YYYY-MM-DD) [account-session]
 ```
 
 The `*` marks the currently active profile.
@@ -226,7 +229,7 @@ csp save
 ```
 
 **Behavior:**
-- Captures all managed symlinks and files from `~/.claude`
+- Captures all managed items and files from `~/.claude`
 - Overwrites profile's `source.json` and file copies
 - Useful after modifying rules, settings, or other configuration
 - Requires active profile (run `csp create` if none exists)
@@ -244,7 +247,7 @@ csp use <name> [options]
 **Options:**
 - `--dry-run` — Show what would change without executing
 - `--no-save` — Skip saving current profile before switching
-- `--force` — Switch even if some symlink targets are missing
+- `--force` — Accepted for compatibility (current switch path does not block on target-link validation)
 
 **Examples:**
 
@@ -269,14 +272,13 @@ csp use legacy --force
 ```
 
 **Behavior:**
-1. Validates target profile exists and is valid
-2. (Optional) Validates symlink targets exist
+1. Validates target profile exists and profile structure is valid
+2. Refuses to switch while Claude Code is running (legacy/global switching mutates `~/.claude` directly)
 3. If active profile exists and `--no-save` is not set: saves current state
-4. Creates automatic backup at `~/.claude-profiles/.backup/`
-5. Removes all managed items from `~/.claude`
-6. Restores target profile's symlinks and files
-7. Updates active marker
-8. **Important:** Claude Code session must be restarted for changes to apply
+4. Removes managed items/files from `~/.claude` as needed
+5. Restores target profile configuration into `~/.claude`
+6. Updates active marker
+7. **Important:** Claude Code session must be restarted for changes to apply
 
 ---
 
@@ -339,7 +341,7 @@ csp export staging -o ~/backups/claude-staging.tar.gz
 
 **Behavior:**
 - Creates tar.gz archive of entire profile directory
-- Includes source.json (symlink targets) and all copied files
+- Includes `source.json` (managed item map) and copied profile files/directories
 - Useful for backup, sharing, or version control
 
 ---
@@ -403,7 +405,7 @@ csp diff current backup
 ```
 Comparing: staging ↔ production
 
-Symlink targets (source.json): identical
+Managed item map (source.json): identical
 
 File differences:
   settings.json — different
@@ -412,9 +414,79 @@ File differences:
 ```
 
 **Behavior:**
-- Compares `source.json` (symlink targets)
+- Compares `source.json` (managed item map)
 - Lists file presence and content differences
 - Shows which files differ and in which profile they exist
+
+---
+
+### deactivate
+
+Deactivate the currently active non-default profile and clear `.active` without switching to another profile.
+
+```bash
+csp deactivate
+```
+
+**Options:**
+- `--no-save` — Skip saving current profile state before deactivation
+
+**Behavior:**
+1. Exits early if no active profile or active profile is `default`
+2. Optionally saves active profile state
+3. Removes managed items/files from `~/.claude`
+4. Clears active marker
+
+---
+
+### launch (la)
+
+Launch an isolated Claude session for a profile. This does **not** change global active profile. All extra arguments are forwarded to `claude`.
+
+```bash
+csp launch <name> [claude-args...]
+csp la <name> [claude-args...]
+```
+
+**Options:**
+- `--legacy-global` — Use old behavior (`csp use <name>` then launch)
+
+**Examples:**
+
+Launch isolated session:
+```bash
+csp launch work
+```
+
+Launch isolated with Claude flags:
+```bash
+csp launch work --dangerously-skip-permissions
+csp la dev --model opus
+```
+
+Launch legacy/global mode:
+```bash
+csp launch work --legacy-global
+```
+
+**Behavior (default isolated mode):**
+1. Validates target profile exists
+2. Prepares per-profile runtime under `~/.claude-profiles/.runtime/<name>`
+3. Resolves effective allowlisted `ANTHROPIC_*` launch env (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) with precedence: `settings.json env` > profile `.env` allowlist > parent process env
+4. Strips inherited `CLAUDECODE`, inherited `CLAUDE_CONFIG_DIR`, and inherited `ANTHROPIC_*` before applying resolved allowlisted values
+5. Spawns `claude` with `CLAUDE_CONFIG_DIR=<runtimeDir>`
+6. Inherits stdin/stdout/stderr for interactive use
+7. Forwards Claude's exit code
+8. Keeps `.active` unchanged and never mutates global `~/.claude`
+
+`ANTHROPIC_*` keys currently in isolated launch scope:
+- `ANTHROPIC_AUTH_TOKEN`
+- `ANTHROPIC_BASE_URL`
+- `ANTHROPIC_MODEL`
+
+Set `CSP_DEBUG_LAUNCH_ENV=1` to print key-level launch diagnostics (sources only, values are never printed).
+
+---
 
 ### uninstall
 
@@ -462,10 +534,13 @@ Profiles are stored in `~/.claude-profiles/`:
 
 ```
 ~/.claude-profiles/
-├── .active                    # Current active profile name
-├── profiles.json              # Metadata for all profiles
+├── .active                    # Current active profile name (legacy use mode)
+├── profiles.json              # Metadata for all profiles (v2 schema)
+├── .runtime/                  # Isolated launch roots
+│   ├── work/
+│   └── personal/
 ├── default/
-│   ├── source.json           # Symlink targets
+│   ├── source.json           # Managed item map
 │   ├── settings.json         # Copied from ~/.claude
 │   ├── .env                  # Copied from ~/.claude
 │   ├── .ck.json              # Copied from ~/.claude
@@ -480,7 +555,7 @@ Profiles are stored in `~/.claude-profiles/`:
 
 ### What Gets Managed
 
-**Symlinked Items** (via `source.json`):
+**Managed Static Items** (via `source.json`):
 - `CLAUDE.md` — Project-specific Claude configuration
 - `rules/` — Development rules and guidelines
 - `agents/` — Agent scripts and configurations
@@ -491,45 +566,49 @@ Profiles are stored in `~/.claude-profiles/`:
 
 **Copied Files**:
 - `settings.json` — Editor settings
-- `.env` — Environment variables
-- `.ck.json` — Custom settings
-- `.ckignore` — Ignore patterns
+- `.env`, `.env.example` — Environment variables
+- `.ck.json`, `.ckignore` — Custom settings and ignore patterns
+- `.mcp.json`, `.mcp.json.example` — MCP configuration
+- `.gitignore` — Local ignore settings
 
 **Copied Directories**:
-- `commands/` — Custom commands
-- `plugins/` — Custom plugins
+- `commands/`, `plugins/` — Custom commands/plugins
+- `workflows/`, `scripts/` — Automation and workflow assets
+- `output-styles/`, `schemas/` — Output and schema assets
 
 **Never Touched** (runtime/session data):
 - `.credentials.json`
-- `projects/`
-- `backups/`
-- `cache/`, `debug/`, `telemetry/`
-- `history.jsonl`
-- `plans/`, `todos/`, `tasks/`
-- `agent-memory/`, `session-env/`
+- `projects/`, `sessions/`, `session-env/`, `ide/`
+- `cache/`, `paste-cache/`, `downloads/`, `telemetry/`, `debug/`, `statsig/`
+- `history.jsonl`, `metadata.json`, `stats-cache.json`, `active-plan`
+- `backups/`, `command-archive/`, `commands-archived/`
+- `plans/`, `todos/`, `tasks/`, `teams/`, `agent-memory/`, `file-history/`, `shell-snapshots/`
 - All other session-specific data
 
-### Symlink vs. Copy Strategy
+### Legacy vs Isolated Launch Modes
 
-**Why symlinks for some items?**
-- Rules, agents, skills often live in external git repos
-- Multiple profiles may share the same rules/skills
-- Symlinks avoid duplication and keep everything in sync
+CSP now supports two paths:
 
-**Why copies for others?**
-- Settings and env vars are environment-specific
-- Each profile needs its own independent configuration
-- Prevents accidental modifications from affecting other profiles
+- **Legacy global mode (`csp use`)**
+  - Mutates `~/.claude`
+  - Updates `.active`
+  - Preserves old behavior for existing scripts
 
-### Real Directory Handling
+- **Isolated launch mode (`csp launch`)**
+  - Does not mutate `~/.claude`
+  - Does not change `.active`
+  - Creates/updates runtime root per profile at `~/.claude-profiles/.runtime/<name>`
+  - Launches Claude with `CLAUDE_CONFIG_DIR` pointing to that runtime root
 
-When `csp save` (or `csp use`) encounters a **real directory/file** in `~/.claude` for a managed item (instead of a symlink), it automatically:
+### Runtime Sync Policy (isolated launch)
 
-1. **Moves** the real item into the profile directory (`~/.claude-profiles/<name>/<item>`)
-2. **Replaces** it with a symlink at the original location
-3. **Records** the new location in `source.json`
+For each launch, CSP syncs static profile config into runtime root:
 
-This ensures that profiles created from a fresh `~/.claude` setup (before any symlinks exist) work correctly on first use.
+- Managed items (`CLAUDE.md`, `rules`, `agents`, `skills`, `hooks`, statusline files, `.luna.json`)
+- Copied files (`settings.json`, `.env`, `.ck.json`, `.ckignore`, etc.)
+- Copied directories (`commands`, `plugins`, `workflows`, `scripts`, ...)
+
+Runtime/account continuity stays isolated per runtime root and is not globally swapped.
 
 ## Safety Features
 
@@ -561,7 +640,7 @@ Every profile switch creates a timestamped backup:
     └── ...
 ```
 
-Backups are kept indefinitely. You can manually restore by copying from backup directory.
+Backups are pruned automatically; CSP keeps only the 2 most recent backups. You can manually restore by copying from backup directory.
 
 ### Claude Process Detection
 
@@ -573,14 +652,19 @@ When switching profiles, CSP detects if Claude Code is running:
 
 **Important:** Changes only take effect after restarting Claude Code.
 
+### Windows Support
+
+Process detection uses `tasklist` instead of `pgrep` on Windows.
+
+Export/import commands use the built-in `tar.exe` available on Windows 10+.
+
 ### Validation
 
 Before switching, CSP validates:
 1. Target profile exists
 2. Profile structure is valid
-3. (Optional with `--force`) Symlink targets are accessible
 
-Use `--force` to proceed even if validation fails:
+`--force` is currently accepted for compatibility:
 
 ```bash
 csp use legacy --force
@@ -728,15 +812,11 @@ csp delete default
 rm ~/.claude-profiles/.lock
 ```
 
-### Symlink targets missing
+### Invalid profile structure
 
-**Warning:** `Some symlink targets are missing: rules/development-rules.md — missing target`
+**Error:** `Profile "name" is invalid: Missing source.json — no managed items defined`
 
-**Solution:** Either restore the missing files to their original location or use `--force`:
-
-```bash
-csp use production --force
-```
+**Solution:** Recreate the profile or import a valid profile archive.
 
 ### Changes not applying
 
@@ -781,10 +861,15 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and migration guidance.
 │   │   ├── delete.js
 │   │   ├── export.js
 │   │   ├── import.js
-│   │   └── diff.js
+│   │   ├── diff.js
+│   │   ├── launch.js
+│   │   ├── deactivate.js
+│   │   └── uninstall.js
 │   ├── constants.js              # Configuration constants
+│   ├── platform.js               # Cross-platform compatibility
 │   ├── profile-store.js          # Profile metadata management
-│   ├── symlink-manager.js        # Symlink operations
+│   ├── runtime-instance-manager.js # Isolated runtime sync
+│   ├── item-manager.js           # Managed item copy/move operations
 │   ├── file-operations.js        # File copy/restore operations
 │   ├── safety.js                 # Locking, backups, validation
 │   ├── profile-validator.js      # Profile validation

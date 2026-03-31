@@ -1,5 +1,4 @@
-import { getActive } from '../profile-store.js';
-import { getProfileDir } from '../profile-store.js';
+import { getActive, getProfileDir, getProfileMeta } from '../profile-store.js';
 import { success, info, warn } from '../output-helpers.js';
 
 export const currentCommand = () => {
@@ -8,6 +7,12 @@ export const currentCommand = () => {
     warn('No active profile. Run "csp create <name>" to create one.');
     return;
   }
-  success(`Active profile: ${active}`);
+  success(`Active legacy profile: ${active}`);
   info(`Location: ${getProfileDir(active)}`);
+
+  const meta = getProfileMeta(active);
+  if (meta?.lastLaunchAt) {
+    info(`Last isolated launch: ${meta.lastLaunchAt}`);
+    if (meta.runtimeDir) info(`Isolated runtime: ${meta.runtimeDir}`);
+  }
 };

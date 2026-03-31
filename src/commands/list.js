@@ -20,7 +20,8 @@ export const listCommand = () => {
     const label = isActive ? chalk.green.bold(name) : name;
     const desc = meta.description ? chalk.dim(` — ${meta.description}`) : '';
     const date = meta.created ? chalk.dim(` (${meta.created.split('T')[0]})`) : '';
-    console.log(`${marker}${label}${desc}${date}`);
+    const mode = meta.mode ? chalk.dim(` [${meta.mode}]`) : '';
+    console.log(`${marker}${label}${desc}${date}${mode}`);
   }
   console.log('');
 };

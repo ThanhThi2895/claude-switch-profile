@@ -1,8 +1,8 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
-import { profileExists, getProfileDir, getActive } from '../profile-store.js';
-import { SOURCE_FILE } from '../constants.js';
+import { profileExists, getActive, getEffectiveDir } from '../profile-store.js';
+import { SOURCE_FILE, ALL_MANAGED } from '../constants.js';
 import { error, info } from '../output-helpers.js';
 
 export const diffCommand = (profileA, profileB) => {
@@ -31,19 +31,29 @@ export const diffCommand = (profileA, profileB) => {
     process.exit(1);
   }
 
-  const dirA = getProfileDir(nameA);
-  const dirB = getProfileDir(nameB);
+  const dirA = getEffectiveDir(nameA);
+  const dirB = getEffectiveDir(nameB);
 
   console.log(`\n${chalk.bold('Comparing:')} ${chalk.cyan(nameA)} ↔ ${chalk.cyan(nameB)}\n`);
 
-  // Compare source.json (symlink targets)
+  // Compare source.json (managed item sources)
   const sourceA = readJsonSafe(join(dirA, SOURCE_FILE));
   const sourceB = readJsonSafe(join(dirB, SOURCE_FILE));
-  diffObject('Symlink targets (source.json)', sourceA, sourceB, nameA, nameB);
+  diffObject('Managed item sources (source.json)', sourceA, sourceB, nameA, nameB);
 
   // Compare files that exist in either profile
-  const filesA = new Set(readdirSync(dirA).filter((f) => f !== SOURCE_FILE));
-  const filesB = new Set(readdirSync(dirB).filter((f) => f !== SOURCE_FILE));
+  // When reading from CLAUDE_DIR (active/default profile), filter to only managed items
+  const active = getActive();
+  const managedSet = new Set(ALL_MANAGED);
+  const listManagedFiles = (dir) => {
+    const all = readdirSync(dir).filter((f) => f !== SOURCE_FILE);
+    if ((dir === dirA && active === nameA) || (dir === dirB && active === nameB)) {
+      return new Set(all.filter((f) => managedSet.has(f)));
+    }
+    return new Set(all);
+  };
+  const filesA = listManagedFiles(dirA, nameA);
+  const filesB = listManagedFiles(dirB, nameB);
 
   const allFiles = new Set([...filesA, ...filesB]);
   const diffs = [];
@@ -73,7 +83,7 @@ export const diffCommand = (profileA, profileB) => {
   }
 
   if (diffs.length === 0) {
-    info('Profiles are identical (excluding symlink targets).');
+    info('Profiles are identical (excluding source paths).');
   } else {
     console.log(chalk.bold('File differences:'));
     for (const d of diffs) {

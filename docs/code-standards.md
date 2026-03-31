@@ -11,7 +11,7 @@ This document defines the coding conventions, architectural patterns, and qualit
 ```
 claude-switch-profile/
 ├── bin/
-│   └── csp.js                  # CLI entry point
+│   └── csp.js                           # CLI entry point
 ├── src/
 │   ├── commands/
 │   │   ├── init.js
@@ -23,24 +23,30 @@ claude-switch-profile/
 │   │   ├── delete.js
 │   │   ├── export.js
 │   │   ├── import.js
-│   │   └── diff.js
-│   ├── constants.js            # Configuration & paths
-│   ├── profile-store.js        # Metadata management
-│   ├── symlink-manager.js      # Symlink operations
-│   ├── file-operations.js      # File/dir copy/restore
-│   ├── profile-validator.js    # Validation logic
-│   ├── safety.js               # Locks, backups, detection
-│   └── output-helpers.js       # Console formatting
+│   │   ├── diff.js
+│   │   ├── deactivate.js
+│   │   ├── launch.js
+│   │   └── uninstall.js
+│   ├── constants.js                    # Configuration & paths
+│   ├── profile-store.js                # Metadata management
+│   ├── runtime-instance-manager.js     # Runtime isolation
+│   ├── item-manager.js                 # Item copy/move operations
+│   ├── launch-effective-env-resolver.js # Env variable resolution
+│   ├── file-operations.js              # File/dir copy/restore
+│   ├── profile-validator.js            # Validation logic
+│   ├── safety.js                       # Locks, backups, detection
+│   ├── output-helpers.js               # Console formatting
+│   └── platform.js                     # Cross-platform compatibility
 ├── tests/
-│   ├── core-library.test.js    # Unit tests
-│   ├── cli-integration.test.js # Integration tests
-│   └── safety.test.js          # Safety feature tests
+│   ├── core-library.test.js            # Unit tests
+│   ├── cli-integration.test.js         # Integration tests
+│   └── safety.test.js                  # Safety feature tests
 ├── package.json
 ├── README.md
 └── docs/
     ├── project-overview-pdr.md
     ├── system-architecture.md
-    └── code-standards.md       # This file
+    └── code-standards.md               # This file
 ```
 
 ### File Naming Conventions
@@ -92,7 +98,7 @@ import { Command } from 'commander';
 
 // 3. Local modules (relative imports)
 import { getActive, setActive } from '../profile-store.js';
-import { saveSymlinks } from '../symlink-manager.js';
+import { copyItems, moveItems } from '../item-manager.js';
 import { success, error } from '../output-helpers.js';
 ```
 
@@ -102,7 +108,7 @@ import { success, error } from '../output-helpers.js';
 
 ### Naming Conventions
 
-#### Variables & Functions
+#### Core modules
 
 Use **camelCase** for variables and functions:
 
@@ -111,13 +117,13 @@ Use **camelCase** for variables and functions:
 const profileDir = getProfileDir(name);
 const isActive = active === name;
 function saveCurrentState() { }
-const symlinks = readCurrentSymlinks();
+const itemMap = readCurrentItems();
 
 // ✗ Bad
 const ProfileDir = getProfileDir(name);
 const is_active = active === name;
 function save_current_state() { }
-const Symlinks = readCurrentSymlinks();
+const ItemMap = readCurrentItems();
 ```
 
 #### Constants
@@ -127,7 +133,7 @@ Use **SCREAMING_SNAKE_CASE** for module-level constants:
 ```javascript
 // ✓ Good
 export const CLAUDE_DIR = process.env.CSP_CLAUDE_DIR || join(home, '.claude');
-export const SYMLINK_ITEMS = [
+export const MANAGED_ITEMS = [
   'CLAUDE.md',
   'rules',
   'agents',
@@ -135,7 +141,7 @@ export const SYMLINK_ITEMS = [
 
 // ✗ Bad
 export const claudeDir = process.env.CSP_CLAUDE_DIR || join(home, '.claude');
-export const symlink_items = ['CLAUDE.md', 'rules', 'agents'];
+export const managed_items = ['CLAUDE.md', 'rules', 'agents'];
 ```
 
 #### File Paths & Directories
@@ -325,20 +331,20 @@ Document non-obvious functions:
 
 ```javascript
 // ✓ Good - documents purpose and return
-export const readCurrentSymlinks = () => {
-  // Reads all managed symlinks from ~/.claude
+export const readCurrentItems = () => {
+  // Reads all managed items from ~/.claude
   // Returns: { itemName: targetPath } or {} if none found
   const sourceMap = {};
-  for (const item of SYMLINK_ITEMS) {
+  for (const item of MANAGED_ITEMS) {
     // ...
   }
   return sourceMap;
 };
 
 // ✗ Bad - no documentation
-export const readCurrentSymlinks = () => {
+export const readCurrentItems = () => {
   const sourceMap = {};
-  for (const item of SYMLINK_ITEMS) {
+  for (const item of MANAGED_ITEMS) {
     // ...
   }
   return sourceMap;
@@ -731,7 +737,7 @@ if (!profileExists(name)) {
 
 **Built-in Node.js only:**
 - `fs`, `path`, `os`
-- `child_process` (execSync for tar)
+- `child_process` (execSync for tar, execFileSync for process detection, spawn for launch)
 - `readline` (for prompts)
 
 ### Adding New Dependencies
@@ -867,5 +873,5 @@ When reviewing code, ensure:
 
 ---
 
-**Last Updated:** 2026-03-11
-**Version:** 1.0.0
+**Last Updated:** 2026-03-27
+**Version:** 1.2.0

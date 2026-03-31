@@ -1,7 +1,8 @@
 import { rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { getActive, removeProfile, profileExists, getProfileDir } from '../profile-store.js';
-import { success, error, warn } from '../output-helpers.js';
+import { getActive, clearActive, removeProfile, profileExists, getProfileDir } from '../profile-store.js';
+import { success, error, warn, info } from '../output-helpers.js';
+import { DEFAULT_PROFILE } from '../constants.js';
 
 const confirm = (question) => {
   return new Promise((resolve) => {
@@ -14,14 +15,13 @@ const confirm = (question) => {
 };
 
 export const deleteCommand = async (name, options) => {
-  if (!profileExists(name)) {
-    error(`Profile "${name}" does not exist.`);
+  if (name === DEFAULT_PROFILE) {
+    error('Cannot delete the default profile.');
     process.exit(1);
   }
 
-  const active = getActive();
-  if (active === name) {
-    error(`Cannot delete active profile "${name}". Switch to another profile first.`);
+  if (!profileExists(name)) {
+    error(`Profile "${name}" does not exist.`);
     process.exit(1);
   }
 
@@ -33,8 +33,20 @@ export const deleteCommand = async (name, options) => {
     }
   }
 
+  const active = getActive();
   const profileDir = getProfileDir(name);
+
+  // Delete profile directory
   rmSync(profileDir, { recursive: true, force: true });
   removeProfile(name);
+
+  // If deleting the active profile, just clear the marker
+  // NEVER touch ~/.claude — leave symlinks/files as-is
+  if (active === name) {
+    clearActive();
+    info('Was active profile — active marker cleared.');
+    info('Symlinks in ~/.claude may now be dangling. Run "csp use <profile>" to switch.');
+  }
+
   success(`Profile "${name}" deleted.`);
 };

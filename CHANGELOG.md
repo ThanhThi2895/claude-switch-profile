@@ -2,6 +2,30 @@
 
 All notable changes to `claude-switch-profile` are documented here.
 
+## [1.3.0] - 2026-03-28
+
+### Added
+- ✨ **Interactive profile selector** — Run `csp` with no arguments to get an arrow-key profile picker that launches isolated sessions. Supports ↑/↓/j/k navigation, Enter to select, Esc to cancel.
+- ✨ **`csp status`** — Dashboard showing active profile, profile count, last launch info, and Claude running status at a glance.
+- ✨ **`csp toggle`** — Quick-switch to the previous profile (like `cd -`). Uses isolated launch, never touches ~/.claude.
+- ✨ **`csp select`** — Explicit alias for the interactive selector.
+
+### Changed
+- 🔒 **`~/.claude` is never modified** — All profile operations now use isolated runtime (`CLAUDE_CONFIG_DIR`). The `default` profile is a virtual alias for `~/.claude` as-is.
+- 🔒 **`default` profile is virtual** — `csp init` no longer creates a physical directory for the default profile. Default means "use ~/.claude directly".
+- 🔒 **`csp launch default`** — Launches Claude with native `~/.claude` (no runtime dir, no `CLAUDE_CONFIG_DIR` override).
+- 🔒 **`csp deactivate`** — Now simply resets active marker to `default`. No longer deletes files from `~/.claude`.
+- ⚠️ **`csp use` deprecated** — Shows warning that it modifies `~/.claude` (legacy mode). Users should prefer `csp launch`.
+- 🔄 **`csp toggle`** — Now uses `launch` (isolated) instead of `use` (legacy).
+
+### Fixed
+- 🐛 Removed dead `--force` option from `csp use`.
+- 🐛 Fixed double `getActive()` call in `init` command.
+- 🐛 Fixed stale "symlink targets" comment in safety.js.
+- 🐛 Removed unused parameter in diff.js.
+
+---
+
 ## [1.1.0] - 2026-03-13
 
 ### Added

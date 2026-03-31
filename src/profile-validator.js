@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { SOURCE_FILE, SYMLINK_ITEMS } from './constants.js';
+import { SOURCE_FILE, MANAGED_ITEMS } from './constants.js';
 
 // Validate a profile directory
 export const validateProfile = (profileDir) => {
@@ -12,13 +12,13 @@ export const validateProfile = (profileDir) => {
 
   const sourcePath = join(profileDir, SOURCE_FILE);
   if (!existsSync(sourcePath)) {
-    errors.push('Missing source.json — no symlink targets defined');
+    errors.push('Missing source.json — no managed items defined');
   }
 
   return { valid: errors.length === 0, errors };
 };
 
-// Check all symlink targets in sourceMap actually exist on disk
+// Check all item targets in sourceMap actually exist on disk
 export const validateSourceTargets = (sourceMap) => {
   const errors = [];
   for (const [item, target] of Object.entries(sourceMap)) {
@@ -29,17 +29,15 @@ export const validateSourceTargets = (sourceMap) => {
   return { valid: errors.length === 0, errors };
 };
 
-// List what files/symlinks a profile contains
+// List what files a profile contains
 export const listManagedItems = (profileDir) => {
-  if (!existsSync(profileDir)) return { symlinks: [], files: [], dirs: [] };
+  if (!existsSync(profileDir)) return { files: [], dirs: [] };
 
   const entries = readdirSync(profileDir, { withFileTypes: true });
-  const items = { symlinks: [], files: [], dirs: [] };
+  const items = { files: [], dirs: [] };
 
   for (const entry of entries) {
-    if (entry.name === SOURCE_FILE) {
-      items.files.push(entry.name);
-    } else if (entry.isDirectory()) {
+    if (entry.isDirectory()) {
       items.dirs.push(entry.name);
     } else {
       items.files.push(entry.name);

@@ -1,14 +1,18 @@
-import { getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveSymlinks, removeSymlinks, restoreSymlinks, createSymlinks } from '../symlink-manager.js';
-import { saveFiles, removeFiles, restoreFiles } from '../file-operations.js';
-import { validateProfile, validateSourceTargets } from '../profile-validator.js';
-import { withLock, warnIfClaudeRunning, createBackup } from '../safety.js';
+import { getActive, setActive, profileExists, getProfileDir, getProfileMeta, setPrevious } from '../profile-store.js';
+import { moveItemsToProfile, moveItemsToClaude, saveItems, removeItems } from '../item-manager.js';
+import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths, moveDirsToProfile, moveDirsToClaude } from '../file-operations.js';
+import { validateProfile } from '../profile-validator.js';
+import { withLock, assertClaudeNotRunning } from '../safety.js';
 import { success, error, info, warn } from '../output-helpers.js';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { SOURCE_FILE } from '../constants.js';
+import { CLAUDE_DIR, DEFAULT_PROFILE } from '../constants.js';
 
 export const useCommand = async (name, options) => {
+  // Warn about legacy behavior (skip if called internally from launch --legacy-global)
+  if (!options.skipClaudeCheck) {
+    warn('Note: "csp use" modifies ~/.claude directly (legacy mode).');
+    info('Prefer "csp launch <name>" for isolated sessions that never touch ~/.claude.');
+  }
+
   if (!profileExists(name)) {
     error(`Profile "${name}" does not exist. Run "csp list" to see available profiles.`);
     process.exit(1);
@@ -21,30 +25,21 @@ export const useCommand = async (name, options) => {
   }
 
   const profileDir = getProfileDir(name);
+  const meta = getProfileMeta(name);
 
-  // Validate target profile
-  const validation = validateProfile(profileDir);
-  if (!validation.valid) {
-    error(`Profile "${name}" is invalid:`);
-    validation.errors.forEach((e) => error(`  ${e}`));
-    process.exit(1);
+  if (meta?.lastLaunchAt) {
+    warn(`Profile "${name}" was used in isolated launch mode recently (${meta.lastLaunchAt}).`);
+    info('Legacy "csp use" mutates global ~/.claude state.');
   }
 
-  // Validate symlink targets exist
-  const sourcePath = join(profileDir, SOURCE_FILE);
-  try {
-    const sourceMap = JSON.parse(readFileSync(sourcePath, 'utf-8'));
-    const targetValidation = validateSourceTargets(sourceMap);
-    if (!targetValidation.valid) {
-      warn('Some symlink targets are missing:');
-      targetValidation.errors.forEach((e) => warn(`  ${e}`));
-      if (!options.force) {
-        error('Use --force to switch anyway.');
-        process.exit(1);
-      }
+  // Validate target profile (skip for default — it's a pass-through)
+  if (name !== DEFAULT_PROFILE) {
+    const validation = validateProfile(profileDir);
+    if (!validation.valid) {
+      error(`Profile "${name}" is invalid:`);
+      validation.errors.forEach((e) => error(`  ${e}`));
+      process.exit(1);
     }
-  } catch {
-    // source.json parse error — will be caught during restore
   }
 
   if (options.dryRun) {
@@ -53,50 +48,64 @@ export const useCommand = async (name, options) => {
     return;
   }
 
-  warnIfClaudeRunning();
+  if (!options.skipClaudeCheck) {
+    try {
+      assertClaudeNotRunning();
+    } catch (err) {
+      error(err.message);
+      process.exit(1);
+    }
+  }
 
   await withLock(async () => {
-    // 1. Save current state to active profile (if any)
-    if (active && profileExists(active) && options.save !== false) {
+    // 1. Save current state (skip if from=default — ~/.claude IS default)
+    if (active && active !== DEFAULT_PROFILE && profileExists(active) && options.save !== false) {
       const activeDir = getProfileDir(active);
-      saveSymlinks(activeDir);
-      saveFiles(activeDir);
+      if (name === DEFAULT_PROFILE) {
+        saveItems(activeDir);
+        saveFiles(activeDir);
+      } else {
+        moveItemsToProfile(activeDir);
+        saveFiles(activeDir);
+        moveDirsToProfile(activeDir);
+      }
+      updateSettingsPaths(activeDir, 'save');
       info(`Saved current state to "${active}"`);
     }
 
-    // 2. Auto-backup
-    const backupPath = createBackup();
-    info(`Backup created at ${backupPath}`);
-
-    // 3. Remove managed items + restore target — with rollback on failure
-    removeSymlinks();
-    removeFiles();
-
-    try {
-      restoreSymlinks(profileDir);
-      restoreFiles(profileDir);
-    } catch (err) {
-      // Rollback: restore from backup
-      warn('Switch failed — rolling back from backup...');
-      try {
-        const backupSource = join(backupPath, SOURCE_FILE);
-        if (existsSync(backupSource)) {
-          const backupMap = JSON.parse(readFileSync(backupSource, 'utf-8'));
-          createSymlinks(backupMap);
-        }
-        restoreFiles(backupPath);
-        warn('Rollback complete. Previous config restored.');
-      } catch (rollbackErr) {
-        error(`Rollback also failed: ${rollbackErr.message}`);
-        error(`Manual recovery: restore from ${backupPath}`);
+    // 2. Remove leftovers only when switching to non-default
+    if (name !== DEFAULT_PROFILE) {
+      if (active !== DEFAULT_PROFILE) {
+        removeItems();
       }
-      throw err;
+      removeFiles();
     }
+
+    // 3. Restore target (skip if to=default — ~/.claude already correct)
+    if (name !== DEFAULT_PROFILE) {
+      try {
+        moveItemsToClaude(profileDir);
+        restoreFiles(profileDir);
+        moveDirsToClaude(profileDir);
+        updateSettingsPaths(CLAUDE_DIR, 'restore', profileDir);
+      } catch (err) {
+        warn(`Switch failed: ${err.message}`);
+        error('Manual recovery: re-run "csp use <profile>" or restore from profile directory.');
+        throw err;
+      }
+    }
+
+    // Track previous profile for toggle
+    if (active) setPrevious(active);
 
     // 4. Update active marker
     setActive(name);
 
     success(`Switched to profile "${name}"`);
-    info('Restart your Claude Code session to apply changes.');
+    if (name === DEFAULT_PROFILE) {
+      info('Using ~/.claude directly (default profile).');
+    } else {
+      info('Restart your Claude Code session to apply changes.');
+    }
   });
 };

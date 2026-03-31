@@ -1,10 +1,18 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { profileExists, getProfileDir } from '../profile-store.js';
-import { success, error } from '../output-helpers.js';
+import { profileExists, getProfileDir, getActive } from '../profile-store.js';
+import { isWindows } from '../platform.js';
+import { saveItems } from '../item-manager.js';
+import { saveFiles, updateSettingsPaths } from '../file-operations.js';
+import { success, error, info } from '../output-helpers.js';
+import { DEFAULT_PROFILE } from '../constants.js';
 
 export const exportCommand = (name, options) => {
+  if (name === DEFAULT_PROFILE) {
+    error('Cannot export the default profile (it uses ~/.claude directly).');
+    process.exit(1);
+  }
+
   if (!profileExists(name)) {
     error(`Profile "${name}" does not exist.`);
     process.exit(1);
@@ -14,11 +22,28 @@ export const exportCommand = (name, options) => {
   const output = options.output || `./${name}.csp.tar.gz`;
   const outputPath = resolve(output);
 
+  // If exporting active profile, save a copy first (non-destructive)
+  const active = getActive();
+  if (active === name) {
+    saveItems(profileDir);
+    saveFiles(profileDir);
+    updateSettingsPaths(profileDir, 'save');
+    info('Saved current state before export.');
+  }
+
+  const tarArgs = isWindows
+    ? ['--force-local', '-czf', outputPath, '-C', profileDir.replace(/\\/g, '/'), '.']
+    : ['-czf', outputPath, '-C', profileDir, '.'];
+
   try {
-    execFileSync('tar', ['-czf', outputPath, '-C', profileDir, '.'], { stdio: 'pipe' });
+    execFileSync(isWindows ? 'tar.exe' : 'tar', tarArgs, { stdio: 'pipe' });
     success(`Profile "${name}" exported to ${outputPath}`);
   } catch (err) {
-    error(`Failed to export: ${err.message}`);
+    if (err.code === 'ENOENT') {
+      error('tar command not found. On Windows, tar is available on Windows 10+.');
+    } else {
+      error(`Failed to export: ${err.message}`);
+    }
     process.exit(1);
   }
 };
