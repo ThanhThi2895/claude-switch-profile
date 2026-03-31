@@ -26,7 +26,10 @@ claude-switch-profile/
 │   │   ├── diff.js
 │   │   ├── deactivate.js
 │   │   ├── launch.js
-│   │   └── uninstall.js
+│   │   ├── uninstall.js
+│   │   ├── select.js
+│   │   ├── status.js
+│   │   └── toggle.js
 │   ├── constants.js                    # Configuration & paths
 │   ├── profile-store.js                # Metadata management
 │   ├── runtime-instance-manager.js     # Runtime isolation
@@ -41,18 +44,21 @@ claude-switch-profile/
 │   ├── core-library.test.js            # Unit tests
 │   ├── cli-integration.test.js         # Integration tests
 │   └── safety.test.js                  # Safety feature tests
+├── scripts/
+│   └── release.js                      # Release helper
 ├── package.json
 ├── README.md
 └── docs/
     ├── project-overview-pdr.md
     ├── system-architecture.md
+    ├── codebase-summary.md
     └── code-standards.md               # This file
 ```
 
 ### File Naming Conventions
 
 - **Commands:** `{command-name}.js` (e.g., `create.js`, `use.js`)
-- **Core modules:** `{purpose}.js` (e.g., `profile-store.js`, `symlink-manager.js`)
+- **Core modules:** `{purpose}.js` (e.g., `profile-store.js`, `launch-effective-env-resolver.js`)
 - **Tests:** `{module}.test.js` (e.g., `core-library.test.js`)
 - **Directories:** kebab-case (e.g., `src/commands/`)
 - **All lowercase:** Prefer lowercase file names for consistency
@@ -873,5 +879,5 @@ When reviewing code, ensure:
 
 ---
 
-**Last Updated:** 2026-03-27
-**Version:** 1.2.0
+**Last Updated:** 2026-03-31
+**Version:** 1.4.0

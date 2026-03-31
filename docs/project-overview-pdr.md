@@ -20,16 +20,19 @@ Enable developers to:
 ### Core Features
 
 #### 1. Profile Management
-- **Init**: Initialize system and capture current state as "default" profile
+- **Init**: Initialize the system and capture current managed `~/.claude` state as a physical `default` profile snapshot
 - **Create**: Create new profiles from current state or clone existing profiles
 - **List**: Show all profiles with descriptions and creation dates
-- **Current**: Display the active profile name and location
+- **Current**: Display the active legacy profile name and location
 - **Use**: Switch to a different profile with auto-save and validation
-- **Save**: Manually save active profile state
+- **Save**: Manually save the active profile snapshot
 - **Delete**: Remove a profile (with confirmation)
-- **Deactivate**: Clear active profile marker and restore managed items to blank state
-- **Launch**: Switch to a profile and immediately launch Claude Code (forwarding extra args)
-- **Uninstall**: Remove CSP and restore a chosen profile to `~/.claude` before wiping all data
+- **Deactivate**: Switch an active non-default legacy profile back to the physical `default` snapshot
+- **Launch**: Launch isolated Claude Code session per profile while preserving profile metadata semantics
+- **Uninstall**: Remove CSP and restore the active or selected profile snapshot to `~/.claude` before wiping all data
+- **Select**: Interactive arrow-key profile picker (default command when no subcommand given)
+- **Status**: Show CSP status dashboard (active profile, profile count, last launch, Claude state)
+- **Toggle**: Switch to the previous profile and launch it
 
 #### 2. Profile Sharing
 - **Export**: Package profile as tar.gz archive
@@ -46,7 +49,9 @@ Enable developers to:
 - `agents/` — Agent scripts
 - `skills/` — Luna skills
 - `hooks/` — Event hooks
-- `statusline.cjs` — Custom statusline
+- `statusline.cjs` — Custom statusline (Node.js)
+- `statusline.sh` — Custom statusline (bash)
+- `statusline.ps1` — Custom statusline (PowerShell)
 - `.luna.json` — Luna config
 
 **Rationale:** These items are managed in profiles for isolation and portability.
@@ -69,10 +74,12 @@ Enable developers to:
 - `output-styles/` — Output styling
 - `schemas/` — JSON schemas
 
-#### Protected Items (never touched)
-- Runtime data: `.credentials.json`, `projects/`, `cache/`, `history.jsonl`
-- Session data: `agent-memory/`, `session-env/`, `todos/`, `tasks/`, `plans/`
-- Telemetry: `telemetry/`, `debug/`, `backups/`
+#### Protected Items (never cloned/touched)
+- Runtime data: `.credentials.json`, `projects/`, `sessions/`, `session-env/`, `ide/`, `cache/`, `paste-cache/`, `downloads/`
+- Tracking data: `history.jsonl`, `metadata.json`, `stats-cache.json`, `active-plan`
+- Session data: `agent-memory/`, `todos/`, `tasks/`, `teams/`, `plans/`, `file-history/`, `shell-snapshots/`
+- Telemetry: `telemetry/`, `debug/`, `statsig/`, `backups/`, `command-archive/`, `commands-archived/`
+- Requirement: these protected/session paths stay excluded from init, save, export, launch runtime sync, migration backfill, and uninstall restore flows
 
 ### Non-Functional Requirements
 
@@ -93,12 +100,14 @@ Enable developers to:
 **Profile Storage:**
 ```
 ~/.claude-profiles/
-├── .active              # File: current profile name
+├── .active              # File: current legacy-active profile name
 ├── profiles.json        # File: metadata for all profiles
 ├── .lock                # File: PID lock during operations
 ├── .backup/             # Dir: timestamped backups
+├── .runtime/            # Dir: isolated launch runtime roots
+├── default/             # Physical default snapshot created by init
 └── {profile-name}/
-    ├── source.json      # Symlink targets map
+    ├── source.json      # Managed item source map
     ├── settings.json    # Copied from ~/.claude
     ├── .env             # Copied from ~/.claude
     ├── .ck.json         # Copied from ~/.claude
@@ -111,7 +120,7 @@ Enable developers to:
 
 | Module | Responsibility |
 |---|---|
-| `bin/csp.js` | CLI entry point; command routing |
+| `bin/csp.js` | CLI entry point; command routing (16 commands) |
 | `src/commands/*.js` | Individual command implementations |
 | `profile-store.js` | Profile metadata read/write (profiles.json, .active) |
 | `runtime-instance-manager.js` | Runtime isolation and syncing for launch |
@@ -131,25 +140,29 @@ User runs: csp use <profile>
     ↓
 CLI validates profile exists & structure valid
     ↓
+If target or active is default, ensure physical default snapshot exists
+    ↓
+Legacy install missing default snapshot?
+  - Active = default or unset → guarded backfill from current managed ~/.claude
+  - Active = non-default      → fail closed with repair guidance
+    ↓
 (If --dry-run) Show changes and exit
     ↓
-Detect if Claude running (warn user)
+Detect if Claude running and block switch
 (Windows: uses tasklist; Unix: uses pgrep)
     ↓
 Acquire lock file (prevent concurrent ops)
     ↓
-Save active profile state:
+Save active profile snapshot:
   - Write managed item map to source.json
-  - Copy mutable files from ~/.claude
-    ↓
-Create timestamped backup of current state
+  - Copy mutable files/directories from ~/.claude
     ↓
 Remove all managed items from ~/.claude
     ↓
-Restore target profile:
+Restore target profile snapshot:
   - Read source.json
-  - Manage items in ~/.claude
-  - Copy files from profile to ~/.claude
+  - Restore managed items in ~/.claude
+  - Copy files/directories from profile to ~/.claude
     ↓
 Update .active marker
     ↓
@@ -165,13 +178,24 @@ Remind user to restart Claude Code
 **Profile Metadata (profiles.json):**
 ```json
 {
-  "default": {
-    "created": "2026-03-11T10:00:00.000Z",
-    "description": "Default profile (initial capture)"
-  },
-  "production": {
-    "created": "2026-03-11T10:15:00.000Z",
-    "description": "Production environment with logging"
+  "version": 2,
+  "profiles": {
+    "default": {
+      "created": "2026-03-31T10:00:00.000Z",
+      "description": "Vanilla Claude defaults",
+      "mode": "legacy",
+      "runtimeDir": "/home/user/.claude-profiles/.runtime/default",
+      "runtimeInitializedAt": null,
+      "lastLaunchAt": null
+    },
+    "production": {
+      "created": "2026-03-31T10:15:00.000Z",
+      "description": "Production environment with logging",
+      "mode": "account-session",
+      "runtimeDir": "/home/user/.claude-profiles/.runtime/production",
+      "runtimeInitializedAt": null,
+      "lastLaunchAt": null
+    }
   }
 }
 ```
@@ -185,6 +209,8 @@ Remind user to restart Claude Code
   "skills": "/home/user/.luna-skills",
   "hooks": "/home/user/.claude/hooks",
   "statusline.cjs": "/home/user/.claude/statusline.cjs",
+  "statusline.sh": "/home/user/.claude/statusline.sh",
+  "statusline.ps1": "/home/user/.claude/statusline.ps1",
   ".luna.json": "/home/user/.luna.json"
 }
 ```
@@ -214,7 +240,7 @@ Remind user to restart Claude Code
 - Implement profile-validator.js (validation logic)
 
 ### Phase 3: CLI Commands
-- Implement all 13 commands (init, current, list, create, save, use, delete, export, import, diff, deactivate, launch, uninstall)
+- Implement all 16 commands (init, current, list, create, save, use, delete, export, import, diff, deactivate, launch, uninstall, select, status, toggle)
 - Wire commands into CLI framework
 - Implement error handling and messaging
 
@@ -233,7 +259,7 @@ Remind user to restart Claude Code
 ## Success Criteria
 
 ### Functional
-- [x] All 13 commands implemented and working
+- [x] All 16 commands implemented and working
 - [x] Profiles correctly capture/restore state
 - [x] Managed items properly handled (copy/move)
 - [x] Files copied/restored correctly
@@ -260,13 +286,14 @@ Remind user to restart Claude Code
 
 ### Data Protection
 - **Profile Storage:** Stored in user home directory (`~/.claude-profiles/`)
-- **Sensitive Files:** `.env`, `.credentials.json` handled but `.credentials.json` never managed (stays in place)
-- **Backups:** Timestamped backups retained indefinitely (user responsibility for cleanup)
+- **Sensitive Files:** `.env` may be copied into profile snapshots; `.credentials.json` and other protected/session files are never managed or exported
+- **Backups:** Timestamped backups are pruned to the 2 most recent snapshots
+- **Migration Safety:** Legacy `default` backfill only runs when the live `~/.claude` state is safe to treat as the intended default baseline
 
 ### Access Control
 - Single-user model (per machine user)
 - No authentication required (filesystem-based)
-- Symlinks respected (external repos control their own access)
+- Managed-item symlinks are preserved in saved snapshots and isolated runtime sync, so external repos keep controlling access through the original link targets
 
 ### Operational Safety
 - **Lock File:** Prevents corruption from concurrent operations
@@ -301,6 +328,7 @@ Remind user to restart Claude Code
 | Missing managed item sources | Medium | Medium | Graceful skip + warning message |
 | Corrupted metadata | Low | High | JSON validation + backups |
 | User forgets to restart Claude | High | Medium | Warning message on switch |
+| Legacy install missing `default/` while non-default is active | Medium | High | Fail closed; require user to switch back to intended default baseline before backfill |
 
 ## Future Enhancements
 
@@ -351,6 +379,6 @@ Remind user to restart Claude Code
 
 ---
 
-**Last Updated:** 2026-03-27
-**Version:** 1.2.0
+**Last Updated:** 2026-03-31
+**Version:** 1.4.0
 **Status:** Complete

@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-Claude Switch Profile is a lightweight Node.js CLI application that manages multiple Claude Code configurations with two modes: legacy global switching (`use`) and isolated launch sessions (`launch`) via per-profile runtime roots. The system follows a modular, layered architecture with clear separation of concerns.
+Claude Switch Profile is a lightweight Node.js CLI application that manages multiple Claude Code configurations with two modes: legacy global switching (`use`) and isolated launch sessions (`launch`) via per-profile runtime roots. The `default` profile is now a physical snapshot created by `csp init`, while older installs missing `profiles/default` only backfill it when the live `~/.claude` state is safe to trust. Protected and session files remain excluded throughout. The system follows a modular, layered architecture with clear separation of concerns. It also provides convenience commands: `select` (interactive picker, default), `status` (dashboard), and `toggle` (quick previous-profile switch).
 
 ### High-Level Architecture Diagram
 
@@ -14,17 +14,18 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                   Commands Layer (src/commands/)             │
-│  init  current  list  create  save  use  delete  export  import  diff  deactivate  launch  uninstall
+│  init  current  list  create  save  use  delete  export  import  diff  deactivate  launch  uninstall  select  status  toggle
 └────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                  Core Libraries (src/)                      │
 ├──────────────────────────────────────────────────────────────┤
-│  profile-store.js     │  Metadata + schema normalization      │
+│  profile-store.js     │  Metadata + schema normalization       │
 │  runtime-instance-manager.js │ Isolated runtime prep/sync      │
-│  item-manager.js      │  Managed item copy/move              │
-│  file-operations.js   │  File/directory copy/restore         │
-│  profile-validator.js │  Structure validation                │
+│  item-manager.js      │  Managed item copy/move                │
+│  file-operations.js   │  File/directory copy/restore           │
+│  launch-effective-env-resolver.js │ ANTHROPIC_* env resolution  │
+│  profile-validator.js │  Structure validation                  │
 │  safety.js            │  Global/runtime locks, backups       │
 ├──────────────────────────────────────────────────────────────┤
 │  constants.js         │  Configuration & paths               │
@@ -49,7 +50,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 **Responsibilities:**
 - Load package.json for version
 - Create Commander.js program
-- Register all 13 commands with their options
+- Register all 16 commands with their options
 - Parse command line arguments
 - Invoke appropriate command handler
 
@@ -70,6 +71,9 @@ program.command('diff')         // Compare profiles
 program.command('deactivate')   // Deactivate active profile
 program.command('launch')       // Isolated launch (default) or legacy-global
 program.command('uninstall')    // Remove CSP completely
+program.command('select')       // Interactive profile picker (default command)
+program.command('status')       // CSP status dashboard
+program.command('toggle')       // Switch to previous profile
 ```
 
 ---
@@ -82,8 +86,9 @@ Each command file exports a single async function matching the command name.
 **Flow:**
 1. Check if already initialized
 2. Create profiles directory if needed
-3. Call `createCommand('default')` to capture current state
-4. Set 'default' as active
+3. Ensure `default` metadata exists in `profiles.json`
+4. Materialize `~/.claude-profiles/default/` from the current managed contents of `~/.claude`
+5. Set `default` as active on first init
 
 #### current.js
 **Flow:**
@@ -108,22 +113,25 @@ Each command file exports a single async function matching the command name.
 #### save.js
 **Flow:**
 1. Get active profile
-2. Call saveItems to write source.json
-3. Call saveFiles to copy mutable files
-4. Display success
+2. If active is `default`, ensure the physical default snapshot exists
+3. Call saveItems to write source.json
+4. Call saveFiles to copy mutable files/directories
+5. Display success
 
 #### use.js
 **Flow (most complex)**
 1. Validate target profile exists
-2. Validate profile structure
-3. If `--dry-run`: show changes and exit
-4. If not active: call withLock() to:
-   - Save current profile state
-   - Remove managed items/files from ~/.claude as needed
-   - Restore target profile
-   - Update .active marker
-5. Warn if Claude is running
-6. Display success message
+2. If target or active profile is `default`, ensure its physical snapshot exists
+3. Validate profile structure
+4. If `--dry-run`: show changes and exit
+5. If not active: call withLock() to:
+   - Save current active profile snapshot
+   - Remove managed items/files from `~/.claude`
+   - Restore target profile snapshot, including `default`
+   - Update `.active` marker
+6. On older installs missing `profiles/default`, only backfill when active is `default` or no active profile is set; otherwise fail closed
+7. Warn if Claude is running
+8. Display success message
 
 #### delete.js
 **Flow:**
@@ -135,8 +143,10 @@ Each command file exports a single async function matching the command name.
 #### export.js
 **Flow:**
 1. Validate profile exists
-2. tar -czf the entire profile directory
-3. Write to output file
+2. If exporting active profile, refresh its snapshot first
+3. If exporting `default`, ensure the physical default snapshot exists
+4. tar -czf the entire profile directory
+5. Write to output file
 
 #### import.js
 **Flow:**
@@ -156,19 +166,21 @@ Each command file exports a single async function matching the command name.
 **Flow:**
 1. Read active profile
 2. Exit early if no active profile or active is `default`
-3. Optionally save current state (unless `--no-save`)
-4. Remove managed items/files from `~/.claude`
-5. Clear `.active` marker
-6. Print restart guidance
+3. Delegate to `useCommand(DEFAULT_PROFILE, options)`
+4. Optionally save current non-default state (unless `--no-save`)
+5. Restore the physical `default` snapshot into `~/.claude`
+6. Mark `default` as the active legacy profile and print restart guidance
 
 #### launch.js
 **Flow:**
 1. Validate profile exists
-2. Default mode: acquire per-profile runtime lock, sync runtime root, resolve effective allowlisted `ANTHROPIC_*` launch env (`settings.json env` > `.env` allowlist > parent env), sanitize inherited launch env (`CLAUDECODE`/`CLAUDE_CONFIG_DIR`) and inherited `ANTHROPIC_*`, then set `CLAUDE_CONFIG_DIR` to runtime root (Claude Code auto-discovers config from this path)
-3. Optional `--legacy-global`: call `useCommand()` first
-4. Resolve Claude executable path, then spawn process with forwarded arguments (`where.exe` + Windows fallbacks when needed)
-5. Inherit stdio for interactive use
-6. Forward Claude's exit code
+2. If launching `default`, ensure its physical snapshot exists
+3. Default mode: acquire per-profile runtime lock, sync runtime root, resolve effective allowlisted `ANTHROPIC_*` launch env (`settings.json env` > `.env` allowlist > parent env), sanitize inherited launch env (`CLAUDECODE`/`CLAUDE_CONFIG_DIR`), inherited `ANTHROPIC_*`, and Claude session env vars, then set `CLAUDE_CONFIG_DIR` to runtime root (Claude Code auto-discovers config from this path)
+4. Optional `--legacy-global`: call `useCommand()` first
+5. Resolve Claude executable path, then spawn process with forwarded arguments (`where.exe` + Windows fallbacks when needed)
+6. Inherit stdio for interactive use
+7. Forward Claude's exit code
+8. Preserve `default` metadata mode as `legacy` even when launched through isolated runtime sync
 
 #### uninstall.js
 **Flow:**
@@ -178,9 +190,30 @@ Each command file exports a single async function matching the command name.
 4. Warn if Claude is running
 5. Acquire lock and create final backup (best effort)
 6. Remove all managed items from `~/.claude`
-7. Restore chosen profile (active or `--profile`)
+7. Restore chosen profile (active or `--profile`), including `default` when selected
 8. Release lock, delete `~/.claude-profiles/` entirely
 9. Print npm uninstall reminder
+
+#### select.js (default command)
+**Flow:**
+1. Check if initialized; fallback to list for non-TTY
+2. Render interactive arrow-key menu with profile list
+3. Highlight active profile in green, selected cursor in cyan
+4. On Enter: delegate to `launchCommand()` for chosen profile
+5. On Esc/Ctrl+C: cancel and exit
+
+#### status.js
+**Flow:**
+1. Check if initialized
+2. Read profiles metadata and active profile
+3. Check if Claude is running
+4. Display dashboard: active profile, profile count, last launch timestamp, Claude state
+
+#### toggle.js
+**Flow:**
+1. Read previous profile from `.previous` marker
+2. Validate previous profile exists and differs from active
+3. Delegate to `launchCommand(previous)` to switch and launch
 
 ---
 
@@ -193,6 +226,7 @@ Each command file exports a single async function matching the command name.
 **Data Files:**
 - `~/.claude-profiles/profiles.json` — Versioned profile metadata
 - `~/.claude-profiles/.active` — Current active profile name for legacy `use`
+- `~/.claude-profiles/default/` — Physical default snapshot created by `init` or guarded backfill
 
 **Functions:**
 ```javascript
@@ -203,6 +237,7 @@ getActive()                     // Read .active file
 setActive(name)                 // Write .active file
 addProfile(name, metadata)      // Add profile metadata
 removeProfile(name)             // Remove profile metadata
+ensureDefaultProfileSnapshot()  // Materialize guarded default snapshot when safe
 profileExists(name)             // Check if profile dir exists
 getProfileDir(name)             // Return profile directory path
 getRuntimeDir(name)             // Return isolated runtime path
@@ -236,6 +271,7 @@ syncStaticConfig(profileName)      // Sync managed static config into runtime
 
 **Key Behaviors:**
 - Syncs static profile config (managed items + copied files/dirs)
+- Preserves managed-item symlinks during runtime sync by copying with symlink-aware filesystem operations instead of flattening links into plain directories/files
 - Keeps runtime/account continuity isolated per profile runtime root
 - Rewrites settings paths for runtime root when needed
 - Supports repeated launch reuse with refresh-on-launch policy
@@ -275,8 +311,8 @@ removeFiles()                // Delete managed files/dirs from ~/.claude
 ```
 
 **Managed Items:**
-- **Copy Files:** settings.json, .env, .ck.json, .ckignore
-- **Copy Dirs:** commands, plugins
+- **Copy Files:** settings.json, .env, .ck.json, .ckignore, .mcp.json, .mcp.json.example, .env.example, .gitignore
+- **Copy Dirs:** commands, plugins, workflows, scripts, output-styles, schemas
 
 **Key Behaviors:**
 - Creates profileDir if missing
@@ -366,10 +402,12 @@ MANAGED_ITEMS           // Managed static items copied into profiles/runtime
 MANAGED_DIRS            // Directory-type managed items
 COPY_ITEMS              // Mutable files managed via copy
 COPY_DIRS               // Directories managed via copy
-NEVER_TOUCH             // Runtime/session items never managed
+NEVER_CLONE             // Runtime/session items never managed
+NEVER_TOUCH             // Alias of NEVER_CLONE
 RUNTIME_DIR_NAME        // Runtime root directory name (.runtime)
 RUNTIMES_DIR            // Runtime base directory
 LAUNCH_CONFIG_ENV       // Env var used by launch (CLAUDE_CONFIG_DIR)
+LAUNCH_ANTHROPIC_ENV_KEYS // Allowlisted ANTHROPIC_* keys for launch
 ALL_MANAGED             // Union of managed + copied items
 ```
 
@@ -453,37 +491,37 @@ csp use <profile> [--dry-run] [--no-save] [--force]
     ↓
 Validate profile exists → Error if no
     ↓
+If target or active is default: ensure default snapshot exists
+    ↓
+Legacy install missing profiles/default?
+    ├─ active = default or no active → backfill from current managed ~/.claude
+    └─ active = non-default         → fail closed with repair guidance
+    ↓
 Is profile already active?
     ├─ YES: info("Already active") → Exit
     └─ NO: Continue
     ↓
 validateProfile() → Error if invalid
     ↓
-validateProfile() ensures profile structure valid
-    ↓
-Continue (managed source target validation may warn in specific commands)
-    ↓
 --dry-run specified?
     ├─ YES: info("[Dry run] Would switch...") → Exit
     └─ NO: Continue
     ↓
-warnIfClaudeRunning()
+assertClaudeNotRunning()
     ↓
 withLock(async () => {
     │
     ├─ Active profile exists && !--no-save?
-    │  ├─ YES: save active state into active profile dir
+    │  ├─ YES: save active snapshot into active profile dir
     │  └─ NO: Skip
     │
-    ├─ remove managed items/files from ~/.claude (non-default target)
+    ├─ remove managed items/files from ~/.claude
     │
-    ├─ restore target profile files into ~/.claude (non-default target)
+    ├─ restore target snapshot into ~/.claude
     │
     ├─ setActive(profile_name)
-    │  └─ Write .active file
     │
     └─ success("Switched to profile")
-
 })
     ↓
 info("Restart your Claude Code session")
@@ -780,5 +818,5 @@ To add protected items (never managed):
 
 ---
 
-**Last Updated:** 2026-03-27
-**Version:** 1.2.0
+**Last Updated:** 2026-03-31
+**Version:** 1.4.0
