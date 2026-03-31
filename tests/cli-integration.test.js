@@ -1,9 +1,20 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+  chmodSync,
+  symlinkSync,
+  lstatSync,
+  readlinkSync,
+} from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execSync } from 'node:child_process';
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'csp.js');
 
@@ -32,6 +43,10 @@ const readCapturedEnv = (captureFile) => {
   }
 
   return parsed;
+};
+
+const symlinkTarget = (path) => {
+  return readlinkSync(path).replaceAll('\\', '/');
 };
 
 describe('CLI Integration', () => {
@@ -161,6 +176,20 @@ describe('CLI Integration', () => {
     assert.equal(origSettings, cloneSettings);
   });
 
+  it('create --from preserves symlinked managed items', () => {
+    const hooksTargetDir = join(tempDir, 'clone-hooks-target');
+    mkdirSync(hooksTargetDir, { recursive: true });
+    writeFileSync(join(hooksTargetDir, 'pre-use.cjs'), 'module.exports = {};\n');
+    symlinkSync(hooksTargetDir, join(claudeDir, 'hooks'));
+
+    run('init', envOverrides);
+    run('create clone --from default -d "Clone"', envOverrides);
+
+    const clonedHooks = join(profilesDir, 'clone', 'hooks');
+    assert.equal(lstatSync(clonedHooks).isSymbolicLink(), true);
+    assert.equal(symlinkTarget(clonedHooks), hooksTargetDir.replaceAll('\\', '/'));
+  });
+
   it('delete removes non-active profile with --force', () => {
     run('create todelete', envOverrides);
     run('create keeper', envOverrides);
@@ -195,17 +224,17 @@ describe('CLI Integration', () => {
   });
 
   it('deactivate clears active profile', () => {
+    run('init', envOverrides);
     run('create myprofile', envOverrides);
+    run('use myprofile --no-save', envOverrides);
+
     const beforeOutput = run('current', envOverrides);
     assert.ok(beforeOutput.includes('myprofile'));
 
     run('deactivate', envOverrides);
 
-    // Deactivate resets to default profile (uses ~/.claude directly)
     const afterOutput = run('current', envOverrides);
     assert.ok(afterOutput.includes('default'));
-
-    // Profile should still exist
     assert.ok(existsSync(join(profilesDir, 'myprofile')));
   });
 
@@ -231,70 +260,305 @@ describe('CLI Integration', () => {
     assert.ok(existsSync(join(profilesDir, 'imported', 'source.json')));
   });
 
-  // ─── Default Profile Pass-Through ───
+  it('import rejects unsafe managed symlinks escaping the profile tree', () => {
+    const profileDir = join(tempDir, 'unsafe-profile');
+    mkdirSync(profileDir, { recursive: true });
+    const externalTargetDir = join(tempDir, 'external-hooks');
+    mkdirSync(externalTargetDir, { recursive: true });
+    writeFileSync(join(externalTargetDir, 'pre-use.cjs'), 'module.exports = {};\n');
+    symlinkSync(externalTargetDir, join(profileDir, 'hooks'));
+    writeFileSync(join(profileDir, 'source.json'), JSON.stringify({ hooks: join(profileDir, 'hooks') }, null, 2));
 
-  it('init creates default profile and sets it active', () => {
+    const archivePath = join(tempDir, 'unsafe-profile.csp.tar.gz');
+    const tarCommand = process.platform === 'win32'
+      ? `tar.exe --force-local -czf "${archivePath}" -C "${profileDir.replaceAll('\\', '/')}" .`
+      : `tar -czf "${archivePath}" -C "${profileDir}" .`;
+    execSync(tarCommand, { stdio: 'ignore' });
+
+    const output = run(`import "${archivePath}" -n unsafe-import`, envOverrides);
+    assert.ok(output.includes('unsafe symlink'));
+    assert.equal(existsSync(join(profilesDir, 'unsafe-import')), false);
+  });
+
+  // ─── Real Default Profile ───
+
+  it('init creates physical default profile and sets it active', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+
     run('init', envOverrides);
+
     const output = run('current', envOverrides);
     assert.ok(output.includes('default'));
     assert.ok(output.includes('Active legacy profile'));
-    // default is virtual — no physical directory required
-    assert.equal(existsSync(join(profilesDir, 'default')), false);
+    assert.ok(output.includes(join(profilesDir, 'default')));
+    assert.equal(existsSync(join(profilesDir, 'default')), true);
+    assert.equal(existsSync(join(profilesDir, 'default', 'source.json')), true);
+    assert.equal(readFileSync(join(profilesDir, 'default', 'CLAUDE.md'), 'utf-8'), '# Default baseline');
 
     const listOutput = run('list', envOverrides);
     assert.ok(listOutput.includes('[legacy]'));
   });
 
-  it('use default from non-default keeps ~/.claude unchanged and snapshots active profile', () => {
+  it('init preserves symlinked managed items in the default snapshot', () => {
+    const hooksTargetDir = join(tempDir, 'hook-target');
+    mkdirSync(hooksTargetDir, { recursive: true });
+    writeFileSync(join(hooksTargetDir, 'pre-use.cjs'), 'module.exports = {};\n');
+    symlinkSync(hooksTargetDir, join(claudeDir, 'hooks'));
+
     run('init', envOverrides);
+
+    const defaultHooks = join(profilesDir, 'default', 'hooks');
+    const sourceMap = JSON.parse(readFileSync(join(profilesDir, 'default', 'source.json'), 'utf-8'));
+
+    assert.equal(lstatSync(defaultHooks).isSymbolicLink(), true);
+    assert.equal(symlinkTarget(defaultHooks), hooksTargetDir.replaceAll('\\', '/'));
+    assert.equal(sourceMap.hooks, defaultHooks);
+  });
+
+  it('use default restores saved baseline and snapshots active profile', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"opus"}');
+    run('init', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work seed');
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"sonnet"}');
     run('create work -d "Work"', envOverrides);
     run('use work --no-save', envOverrides);
 
-    // Simulate live non-default state
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live rules');
-    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"sonnet"}');
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"haiku"}');
 
-    const beforeClaude = readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8');
-    const beforeSettings = readFileSync(join(claudeDir, 'settings.json'), 'utf-8');
-
-    // Switch back to default
     const output = run('use default', envOverrides);
     assert.ok(output.includes('default'));
 
-    // Active should be default
     const current = run('current', envOverrides);
     assert.ok(current.includes('default'));
-
-    // ~/.claude content must remain byte-for-byte unchanged across use default
-    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), beforeClaude);
-    assert.equal(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'), beforeSettings);
-
-    // Previous non-default profile must receive updated snapshot
-    assert.equal(readFileSync(join(profilesDir, 'work', 'CLAUDE.md'), 'utf-8'), beforeClaude);
-    assert.equal(readFileSync(join(profilesDir, 'work', 'settings.json'), 'utf-8'), beforeSettings);
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Default baseline');
+    assert.equal(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'), '{"model":"opus"}');
+    assert.equal(readFileSync(join(profilesDir, 'work', 'CLAUDE.md'), 'utf-8'), '# Work live rules');
+    assert.equal(readFileSync(join(profilesDir, 'work', 'settings.json'), 'utf-8'), '{"model":"haiku"}');
   });
 
-  it('use X from default skips save', () => {
+  it('use from default saves the updated default snapshot', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
     run('init', envOverrides);
-    // Create work profile with content
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work');
-    run('create work -d "Work"', envOverrides);
 
-    // Switch to work from default — should not try to save default
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Updated default');
+    run('create work -d "Work"', envOverrides);
+    writeFileSync(join(profilesDir, 'work', 'CLAUDE.md'), '# Work profile');
+
     const output = run('use work', envOverrides);
     assert.ok(output.includes('work'));
+    assert.equal(readFileSync(join(profilesDir, 'default', 'CLAUDE.md'), 'utf-8'), '# Updated default');
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Work profile');
   });
 
-  it('save on default is no-op', () => {
+  it('save on default updates the default profile snapshot', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
     run('init', envOverrides);
-    const output = run('save', envOverrides);
-    assert.ok(output.includes('No save needed') || output.includes('directly'));
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Saved default');
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"sonnet"}');
+    run('save', envOverrides);
+
+    assert.equal(readFileSync(join(profilesDir, 'default', 'CLAUDE.md'), 'utf-8'), '# Saved default');
+    assert.equal(readFileSync(join(profilesDir, 'default', 'settings.json'), 'utf-8'), '{"model":"sonnet"}');
   });
 
-  it('deactivate on default is no-op', () => {
+  it('deactivate switches back to the default profile snapshot', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+    run('init', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work profile');
+    run('create myprofile', envOverrides);
+    run('use myprofile --no-save', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live');
+    const output = run('deactivate', envOverrides);
+
+    assert.ok(output.includes('default'));
+    const afterOutput = run('current', envOverrides);
+    assert.ok(afterOutput.includes('default'));
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Default baseline');
+    assert.equal(readFileSync(join(profilesDir, 'myprofile', 'CLAUDE.md'), 'utf-8'), '# Work live');
+  });
+
+  it('deactivate on default is a no-op', () => {
     run('init', envOverrides);
     const output = run('deactivate', envOverrides);
-    assert.ok(output.includes('Nothing to deactivate') || output.includes('directly'));
+    assert.ok(output.includes('already active'));
+  });
+
+  it('current backfills a missing legacy default snapshot when default is active', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Legacy default');
+    writeFileSync(
+      join(profilesDir, 'profiles.json'),
+      JSON.stringify(
+        {
+          version: 2,
+          profiles: {
+            default: { created: '2026-03-31T00:00:00.000Z', description: 'Legacy default', mode: 'legacy' },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(profilesDir, '.active'), 'default\n');
+
+    const output = run('current', envOverrides);
+
+    assert.ok(output.includes(join(profilesDir, 'default')));
+    assert.equal(existsSync(join(profilesDir, 'default', 'source.json')), true);
+    assert.equal(readFileSync(join(profilesDir, 'default', 'CLAUDE.md'), 'utf-8'), '# Legacy default');
+  });
+
+  it('use default fails closed when legacy default snapshot is missing and non-default is active', () => {
+    writeFileSync(
+      join(profilesDir, 'profiles.json'),
+      JSON.stringify(
+        {
+          version: 2,
+          profiles: {
+            default: { created: '2026-03-31T00:00:00.000Z', description: 'Legacy default', mode: 'legacy' },
+            work: { created: '2026-03-31T00:00:00.000Z', description: 'Work', mode: 'account-session' },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(profilesDir, '.active'), 'work\n');
+    mkdirSync(join(profilesDir, 'work'), { recursive: true });
+    writeFileSync(join(profilesDir, 'work', 'CLAUDE.md'), '# Work snapshot');
+    writeFileSync(
+      join(profilesDir, 'work', 'source.json'),
+      JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'work', 'CLAUDE.md') }, null, 2),
+    );
+
+    const output = run('use default', envOverrides);
+
+    assert.ok(output.includes('cannot safely recreate "default"') || output.includes('cannot safely recreate'));
+    assert.equal(existsSync(join(profilesDir, 'default')), false);
+  });
+
+  it('export default creates a tar.gz archive', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+    run('init', envOverrides);
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Exported default');
+    run('save', envOverrides);
+
+    const archivePath = join(tempDir, 'default.csp.tar.gz');
+    run(`export default -o "${archivePath}"`, envOverrides);
+
+    assert.equal(existsSync(archivePath), true);
+  });
+
+  it('launch default writes runtime metadata and uses live active default state', () => {
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"opus"}');
+    run('init', envOverrides);
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"haiku"}');
+
+    const captureFile = join(tempDir, 'default-active-launch.txt');
+    run('launch default -- --version', {
+      ...envOverrides,
+      CSP_TEST_CAPTURE_FILE: captureFile,
+    });
+
+    const captured = readCapturedEnv(captureFile);
+    const runtimeSettings = readFileSync(join(profilesDir, '.runtime', 'default', 'settings.json'), 'utf-8');
+    const profilesMeta = JSON.parse(readFileSync(join(profilesDir, 'profiles.json'), 'utf-8'));
+    const profiles = profilesMeta.profiles || profilesMeta;
+
+    assert.equal(captured.CLAUDE_CONFIG_DIR, join(profilesDir, '.runtime', 'default'));
+    assert.equal(runtimeSettings, '{"model":"haiku"}');
+    assert.ok(typeof profiles.default.runtimeDir === 'string' && profiles.default.runtimeDir.length > 0);
+    assert.ok(typeof profiles.default.lastLaunchAt === 'string' && profiles.default.lastLaunchAt.length > 0);
+  });
+
+  it('launch default preserves managed symlinks in runtime config', () => {
+    const hooksTargetDir = join(tempDir, 'runtime-hooks-target');
+    mkdirSync(hooksTargetDir, { recursive: true });
+    writeFileSync(join(hooksTargetDir, 'pre-use.cjs'), 'module.exports = {};\n');
+    symlinkSync(hooksTargetDir, join(claudeDir, 'hooks'));
+
+    run('init', envOverrides);
+    run('launch default -- --version', envOverrides);
+
+    const runtimeHooks = join(profilesDir, '.runtime', 'default', 'hooks');
+    assert.equal(lstatSync(runtimeHooks).isSymbolicLink(), true);
+    assert.equal(symlinkTarget(runtimeHooks), hooksTargetDir.replaceAll('\\', '/'));
+  });
+
+  it('launch default uses the stored snapshot when default is inactive', () => {
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"opus"}');
+    run('init', envOverrides);
+
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"sonnet"}');
+    run('create work -d "Work"', envOverrides);
+    run('use work --no-save', envOverrides);
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"haiku"}');
+
+    const captureFile = join(tempDir, 'default-inactive-launch.txt');
+    run('launch default -- --version', {
+      ...envOverrides,
+      CSP_TEST_CAPTURE_FILE: captureFile,
+    });
+
+    const captured = readCapturedEnv(captureFile);
+    const runtimeSettings = readFileSync(join(profilesDir, '.runtime', 'default', 'settings.json'), 'utf-8');
+
+    assert.equal(captured.CLAUDE_CONFIG_DIR, join(profilesDir, '.runtime', 'default'));
+    assert.equal(runtimeSettings, '{"model":"opus"}');
+  });
+
+  it('diff current default compares stored source manifests for active default', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+    run('init', envOverrides);
+
+    const output = run('diff current default', envOverrides);
+    assert.ok(output.includes('Managed item sources (source.json): identical'));
+  });
+
+  it('uninstall --profile default restores the default snapshot', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+    run('init', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work profile');
+    run('create work -d "Work"', envOverrides);
+    run('use work --no-save', envOverrides);
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live');
+    run('save', envOverrides);
+
+    run('uninstall --profile default --force', envOverrides);
+
+    assert.equal(existsSync(profilesDir), false);
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Default baseline');
+  });
+
+  it('uninstall restores the active non-default profile by default', () => {
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+    run('init', envOverrides);
+
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work profile');
+    run('create work -d "Work"', envOverrides);
+    run('use work --no-save', envOverrides);
+    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live');
+    run('save', envOverrides);
+
+    run('uninstall --force', envOverrides);
+
+    assert.equal(existsSync(profilesDir), false);
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Work live');
+  });
+
+  it('launch default keeps default profile mode as legacy', () => {
+    run('init', envOverrides);
+    run('launch default -- --version', envOverrides);
+
+    const profilesMeta = JSON.parse(readFileSync(join(profilesDir, 'profiles.json'), 'utf-8'));
+    const profiles = profilesMeta.profiles || profilesMeta;
+    assert.equal(profiles.default.mode, 'legacy');
   });
 
   it('delete default is blocked', () => {
