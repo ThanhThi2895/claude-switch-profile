@@ -16,7 +16,7 @@ import { importCommand } from '../src/commands/import.js';
 import { diffCommand } from '../src/commands/diff.js';
 import { initCommand } from '../src/commands/init.js';
 import { uninstallCommand } from '../src/commands/uninstall.js';
-import { launchCommand } from '../src/commands/launch.js';
+import { launchCommand, execCommand } from '../src/commands/launch.js';
 import { deactivateCommand } from '../src/commands/deactivate.js';
 import { toggleCommand } from '../src/commands/toggle.js';
 import { statusCommand } from '../src/commands/status.js';
@@ -128,6 +128,26 @@ program
     const unknownOpts = cmd.args.filter((a) => a !== name && !args.includes(a));
     const claudeArgs = [...args, ...unknownOpts];
     launchCommand(name, claudeArgs, options);
+  });
+
+program
+  .command('exec <name> [args...]')
+  .description('Run arbitrary command inside isolated profile runtime environment')
+  .allowUnknownOption(true)
+  .enablePositionalOptions(true)
+  .passThroughOptions(true)
+  .action((name, args, _options, cmd) => {
+    const passthrough = [...(args || [])];
+    const unknown = cmd.args.filter((a) => a !== name && !passthrough.includes(a));
+    const tokens = [...passthrough, ...unknown];
+
+    while (tokens[0] === '--') {
+      tokens.shift();
+    }
+
+    const command = tokens[0];
+    const commandArgs = tokens.slice(1);
+    execCommand(name, command, commandArgs);
   });
 
 program

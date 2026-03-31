@@ -45,6 +45,19 @@ const readCapturedEnv = (captureFile) => {
   return parsed;
 };
 
+const writeEnvCaptureScript = (scriptPath) => {
+  writeFileSync(
+    scriptPath,
+    [
+      "const { writeFileSync } = require('node:fs');",
+      "const outFile = process.argv[2];",
+      "const keys = ['CLAUDE_CONFIG_DIR', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'];",
+      "const lines = keys.map((key) => `${key}=${process.env[key] || ''}`);",
+      "writeFileSync(outFile, `${lines.join('\\n')}\\n`);",
+    ].join('\n'),
+  );
+};
+
 const symlinkTarget = (path) => {
   return readlinkSync(path).replaceAll('\\', '/');
 };
@@ -61,6 +74,13 @@ describe('CLI Integration', () => {
 
     const fakeBinDir = join(tempDir, 'bin');
     mkdirSync(fakeBinDir, { recursive: true });
+
+    const fakeShellPath = join(tempDir, 'fake-shell');
+    writeFileSync(
+      fakeShellPath,
+      '#!/usr/bin/env sh\nif [ "$1" = "-ic" ]; then\n  shift\n  if [ -n "$CSP_TEST_SHELL_RC" ] && [ -f "$CSP_TEST_SHELL_RC" ]; then\n    . "$CSP_TEST_SHELL_RC"\n  fi\n  eval "$1"\n  exit $?\nfi\nexec /bin/sh "$@"\n',
+    );
+    chmodSync(fakeShellPath, 0o755);
 
     const fakeClaudePath = join(fakeBinDir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
     if (process.platform === 'win32') {
@@ -82,6 +102,7 @@ describe('CLI Integration', () => {
       CSP_TEST_CLAUDE_RUNNING: '0',
       NODE_ENV: 'test',
       PATH: `${fakeBinDir}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH || ''}`,
+      SHELL: process.platform === 'win32' ? process.env.SHELL : fakeShellPath,
     };
 
     // Create some files in claude dir to capture
@@ -842,6 +863,203 @@ describe('CLI Integration', () => {
     run('launch lockme -- --version', envOverrides);
 
     assert.equal(existsSync(join(profilesDir, '.runtime.lockme.lock')), false);
+  });
+
+  it('exec runs arbitrary command in isolated profile runtime env', () => {
+    run('init', envOverrides);
+    run('create execiso -d "Exec Isolated"', envOverrides);
+
+    writeFileSync(
+      join(profilesDir, 'execiso', 'settings.json'),
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: 'exec-token',
+            ANTHROPIC_MODEL: 'exec-model',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(profilesDir, 'execiso', '.env'), 'ANTHROPIC_BASE_URL=https://exec.example.com\n');
+
+    const scriptPath = join(tempDir, 'capture-env.js');
+    writeEnvCaptureScript(scriptPath);
+
+    const outputFile = join(tempDir, 'exec-capture.txt');
+    run(`exec execiso -- node "${scriptPath}" "${outputFile}"`, {
+      ...envOverrides,
+      ANTHROPIC_AUTH_TOKEN: 'parent-token',
+      ANTHROPIC_BASE_URL: 'https://parent.example.com',
+      ANTHROPIC_MODEL: 'parent-model',
+    });
+
+    const captured = readCapturedEnv(outputFile);
+    assert.equal(captured.CLAUDE_CONFIG_DIR, join(profilesDir, '.runtime', 'execiso'));
+    assert.equal(captured.ANTHROPIC_AUTH_TOKEN, 'exec-token');
+    assert.equal(captured.ANTHROPIC_BASE_URL, 'https://exec.example.com');
+    assert.equal(captured.ANTHROPIC_MODEL, 'exec-model');
+  });
+
+  it('exec keeps .active marker unchanged', () => {
+    run('init', envOverrides);
+    run('create alpha -d "Alpha"', envOverrides);
+    run('create beta -d "Beta"', envOverrides);
+    run('use alpha --no-save', envOverrides);
+
+    const scriptPath = join(tempDir, 'capture-env.js');
+    writeEnvCaptureScript(scriptPath);
+    const outputFile = join(tempDir, 'exec-active-capture.txt');
+
+    const beforeActive = readFileSync(join(profilesDir, '.active'), 'utf-8').trim();
+    run(`exec beta -- node "${scriptPath}" "${outputFile}"`, envOverrides);
+    const afterActive = readFileSync(join(profilesDir, '.active'), 'utf-8').trim();
+
+    assert.equal(beforeActive, 'alpha');
+    assert.equal(afterActive, 'alpha');
+  });
+
+  it('exec resolves shell functions via interactive shell on non-Windows', () => {
+    if (process.platform === 'win32') return;
+
+    run('init', envOverrides);
+    run('create shellfn -d "Shell Function"', envOverrides);
+
+    writeFileSync(
+      join(profilesDir, 'shellfn', 'settings.json'),
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: 'shell-token',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(profilesDir, 'shellfn', '.env'), 'ANTHROPIC_BASE_URL=https://shell.example.com\n');
+
+    const commandName = 'claude_hd2';
+    const outputFile = join(tempDir, 'exec-shell-capture.txt');
+    const captureScriptPath = join(tempDir, 'capture-env.js');
+    const shellRcPath = join(tempDir, 'fake-shell-rc.sh');
+    writeEnvCaptureScript(captureScriptPath);
+    writeFileSync(
+      shellRcPath,
+      `${commandName}() {\n  node '${captureScriptPath.replaceAll("'", `'"'"'`)}' '${outputFile.replaceAll("'", `'"'"'`)}'\n}\n`,
+    );
+
+    run(`exec shellfn -- ${commandName}`, {
+      ...envOverrides,
+      CSP_TEST_SHELL_RC: shellRcPath,
+      ANTHROPIC_AUTH_TOKEN: 'parent-token',
+      ANTHROPIC_BASE_URL: 'https://parent.example.com',
+    });
+
+    const captured = readCapturedEnv(outputFile);
+    assert.equal(captured.CLAUDE_CONFIG_DIR, join(profilesDir, '.runtime', 'shellfn'));
+    assert.equal(captured.ANTHROPIC_AUTH_TOKEN, 'shell-token');
+    assert.equal(captured.ANTHROPIC_BASE_URL, 'https://shell.example.com');
+  });
+
+  it('exec reasserts isolated env after shell init on non-Windows', () => {
+    if (process.platform === 'win32') return;
+
+    run('init', envOverrides);
+    run('create shellenv -d "Shell Env"', envOverrides);
+
+    writeFileSync(
+      join(profilesDir, 'shellenv', 'settings.json'),
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: 'isolated-token',
+            ANTHROPIC_MODEL: 'isolated-model',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(profilesDir, 'shellenv', '.env'), 'ANTHROPIC_BASE_URL=https://isolated.example.com\n');
+
+    const scriptPath = join(tempDir, 'capture-shell-env.js');
+    writeEnvCaptureScript(scriptPath);
+    const outputFile = join(tempDir, 'exec-shell-env-capture.txt');
+    const shellRcPath = join(tempDir, 'override-shell-rc.sh');
+    writeFileSync(
+      shellRcPath,
+      [
+        'export ANTHROPIC_AUTH_TOKEN=rc-token',
+        'export ANTHROPIC_BASE_URL=https://rc.example.com',
+        'export ANTHROPIC_MODEL=rc-model',
+        'export CLAUDE_CONFIG_DIR=/tmp/rc-config',
+      ].join('\n') + '\n',
+    );
+
+    run(`exec shellenv -- node "${scriptPath}" "${outputFile}"`, {
+      ...envOverrides,
+      CSP_TEST_SHELL_RC: shellRcPath,
+      ANTHROPIC_AUTH_TOKEN: 'parent-token',
+      ANTHROPIC_BASE_URL: 'https://parent.example.com',
+      ANTHROPIC_MODEL: 'parent-model',
+    });
+
+    const captured = readCapturedEnv(outputFile);
+    assert.equal(captured.CLAUDE_CONFIG_DIR, join(profilesDir, '.runtime', 'shellenv'));
+    assert.equal(captured.ANTHROPIC_AUTH_TOKEN, 'isolated-token');
+    assert.equal(captured.ANTHROPIC_BASE_URL, 'https://isolated.example.com');
+    assert.equal(captured.ANTHROPIC_MODEL, 'isolated-model');
+  });
+
+  it('exec validates missing command usage', () => {
+    run('init', envOverrides);
+    run('create exece -d "Exec Error"', envOverrides);
+
+    const output = run('exec exece --', envOverrides);
+    assert.ok(output.includes('Missing command. Usage: csp exec <name> -- <cmd> [args...]'));
+  });
+
+  it('resolveExecTarget enables shell for batch commands on Windows', async () => {
+    const { resolveExecTarget } = await import('../src/commands/launch.js');
+
+    const direct = resolveExecTarget('node', process.env, {
+      isWindows: true,
+      execFileSync() {
+        return 'C:\\Program Files\\nodejs\\node.exe\r\n';
+      },
+    });
+    const batch = resolveExecTarget('C:\\tools\\script.cmd', process.env, { isWindows: true });
+
+    assert.equal(direct.shell, false);
+    assert.equal(batch.shell, true);
+    assert.equal(batch.command, 'C:\\tools\\script.cmd');
+  });
+
+  it('resolveExecTarget enables shell when where.exe resolves .cmd wrapper', async () => {
+    const { resolveExecTarget } = await import('../src/commands/launch.js');
+
+    const target = resolveExecTarget('npm', process.env, {
+      isWindows: true,
+      execFileSync(command, args) {
+        assert.equal(command, 'where.exe');
+        assert.deepEqual(args, ['npm']);
+        return 'C:\\Users\\tester\\AppData\\Roaming\\npm\\npm.cmd\r\n';
+      },
+    });
+
+    assert.equal(target.command, 'npm');
+    assert.equal(target.shell, true);
+  });
+
+  it('resolveExecTarget quotes batch path with spaces on Windows', async () => {
+    const { resolveExecTarget } = await import('../src/commands/launch.js');
+
+    const target = resolveExecTarget('C:\\Program Files\\tools\\run.cmd', process.env, { isWindows: true });
+
+    assert.equal(target.command, '"C:\\Program Files\\tools\\run.cmd"');
+    assert.equal(target.shell, true);
   });
 
   it('resolveClaudeLaunchTarget resolves Windows PATH wrapper instead of hardcoded claude.cmd', async () => {

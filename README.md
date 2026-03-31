@@ -550,6 +550,40 @@ Set `CSP_DEBUG_LAUNCH_ENV=1` to print extended launch diagnostics. Do not use in
 
 ---
 
+### exec
+
+Run an arbitrary command inside isolated profile runtime env. This does **not** change global active profile.
+
+```bash
+csp exec <name> -- <command> [args...]
+```
+
+**Examples:**
+
+Run any CLI tool with profile runtime env:
+```bash
+csp exec work -- env
+csp exec work -- node scripts/check-env.js
+```
+
+Run a shell function/alias defined by your interactive shell:
+```bash
+csp exec hd -- claude-hd2
+```
+
+**Behavior:**
+1. Validates target profile exists
+2. Ensures the profile snapshot exists; for legacy installs missing `default/`, guarded backfill only runs when the active profile is `default` or no active profile is set
+3. Prepares per-profile runtime under `~/.claude-profiles/.runtime/<name>`
+4. Resolves effective allowlisted `ANTHROPIC_*` launch env (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) with precedence: `settings.json env` > profile `.env` allowlist > parent process env
+5. Strips inherited `CLAUDECODE`, inherited `CLAUDE_CONFIG_DIR`, inherited `ANTHROPIC_*`, and Claude session env vars before applying resolved allowlisted values
+6. On Unix-like systems, runs the command through your interactive shell so shell functions/aliases can resolve like a normal terminal command; on Windows, keeps direct spawn behavior with `.cmd` / `.bat` wrapper detection
+7. Reasserts `CLAUDE_CONFIG_DIR` and allowlisted `ANTHROPIC_*` after shell init so profile isolation wins over shell startup overrides
+8. Inherits stdin/stdout/stderr and forwards child exit code
+9. Keeps `.active` unchanged and never mutates global `~/.claude`
+
+---
+
 ### uninstall
 
 Remove all profiles and restore Claude Code to its pre-CSP state.
@@ -687,23 +721,6 @@ Prevents concurrent profile switches:
 Another csp operation is running (PID: 12345).
 Remove ~/.claude-profiles/.lock if stale.
 ```
-
-### Automatic Backups
-
-Every profile switch creates a timestamped backup:
-
-```
-~/.claude-profiles/.backup/
-├── 2026-03-11T14-30-45-123Z/
-│   ├── source.json
-│   ├── settings.json
-│   ├── .env
-│   └── ...
-└── 2026-03-11T15-45-22-456Z/
-    └── ...
-```
-
-Backups are pruned automatically; CSP keeps only the 2 most recent backups. You can manually restore by copying from backup directory.
 
 ### Claude Process Detection
 
@@ -942,6 +959,10 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and migration guidance.
 │   └── safety.test.js
 └── package.json
 ```
+
+## Planned / Future Features
+
+- Automatic backups during profile switch flow (`csp use`) with backup retention/pruning.
 
 ## License
 
