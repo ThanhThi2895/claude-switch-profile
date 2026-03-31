@@ -4,6 +4,8 @@
 [![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**GitHub:** https://github.com/ThanhThi2895/claude-switch-profile
+
 A CLI tool for managing multiple Claude Code configurations and profiles. Use legacy global switching (`csp use`) or concurrent isolated account sessions (`csp launch`) with per-profile runtime roots.
 
 ## Overview
@@ -116,7 +118,15 @@ Output example:
 
 The `*` marks the active profile.
 
-### 6. Uninstall CSP
+### 6. Launch via Interactive Selector (Default Command)
+
+Run `csp` without a subcommand to open the interactive selector and launch a profile immediately:
+
+```bash
+csp
+```
+
+### 7. Uninstall CSP
 
 Remove CSP and restore your Claude Code to its original state:
 
@@ -126,6 +136,22 @@ csp uninstall
 ```
 
 ## Commands Reference
+
+### select (default)
+
+Open interactive profile selector (default behavior when you run `csp` without subcommand).
+
+```bash
+csp
+csp select
+```
+
+**Behavior:**
+- If TTY and multiple profiles exist: shows arrow-key menu and launches selected profile via `csp launch <name>`
+- If only one profile exists: shows informational message and exits
+- If non-interactive terminal: asks to use `csp launch <name>` or `csp use <name>` directly
+
+---
 
 ### init
 
@@ -182,6 +208,16 @@ The `*` marks the currently active profile.
 
 ---
 
+### status
+
+Show CSP status dashboard (active profile, profile count, last launch, Claude process state).
+
+```bash
+csp status
+```
+
+---
+
 ### create
 
 Create a new profile from current state or clone existing profile.
@@ -192,6 +228,7 @@ csp create <name> [options]
 
 **Options:**
 - `--from <profile>` — Clone from existing profile instead of current state
+- `-s, --source <path>` — Create from a specific kit directory, then inherit missing managed items from current `~/.claude`
 - `-d, --description <text>` — Add description to profile
 
 **Examples:**
@@ -211,10 +248,16 @@ Clone from existing:
 csp create backup --from production
 ```
 
+Create from kit directory:
+```bash
+csp create team-kit --source ~/my-kit/.agents -d "Team baseline"
+```
+
 **Behavior:**
 - Creates profile directory: `~/.claude-profiles/<name>/`
 - If `--from` is specified, clones all content from source profile
-- Otherwise, captures current `~/.claude` state
+- If `--source` is specified, copies managed items from that directory, then fills missing managed items from current `~/.claude`
+- Otherwise, performs full clone of current `~/.claude` excluding protected/session items
 - If this is the first profile, automatically sets it as active
 - Saves metadata (created timestamp, description)
 
@@ -248,7 +291,6 @@ csp use <name> [options]
 **Options:**
 - `--dry-run` — Show what would change without executing
 - `--no-save` — Skip saving current profile before switching
-- `--force` — Accepted for compatibility (current switch path does not block on target-link validation)
 
 **Examples:**
 
@@ -267,11 +309,6 @@ Switch without saving current state:
 csp use backup --no-save
 ```
 
-Force switch with missing targets:
-```bash
-csp use legacy --force
-```
-
 **Behavior:**
 1. Validates target profile exists and profile structure is valid
 2. Refuses to switch while Claude Code is running (legacy/global switching mutates `~/.claude` directly)
@@ -281,6 +318,21 @@ csp use legacy --force
 6. Updates active marker
 7. On older installs missing `profiles/default`, CSP only backfills that snapshot when the active profile is `default` or no active profile is set; otherwise it fails closed with repair guidance
 8. **Important:** Claude Code session must be restarted for changes to apply
+
+---
+
+### toggle
+
+Launch the previous profile (does not mutate global active profile in isolated mode).
+
+```bash
+csp toggle
+```
+
+**Behavior:**
+- Reads previous profile marker from `~/.claude-profiles/.previous`
+- Validates previous profile still exists
+- Delegates to `csp launch <previous>`
 
 ---
 
@@ -310,10 +362,11 @@ csp delete old-setup --force
 ```
 
 **Behavior:**
-- Cannot delete the active profile (must switch first)
+- Cannot delete `default`
 - Prompts for confirmation unless `--force` is used
 - Permanently removes profile directory and metadata
-- Cannot be undone (but auto-backups from `use` are preserved)
+- If deleting the currently active non-default profile: clears active marker only (does not mutate `~/.claude`)
+- Cannot be undone
 
 ---
 
@@ -378,6 +431,8 @@ csp import backup.tar.gz -n restored -d "Restored from backup"
 **Behavior:**
 - Extracts archive to `~/.claude-profiles/<name>/`
 - Uses filename as profile name if `--name` not specified
+- Validates imported profile structure
+- Rejects import if managed/copied items contain symlink targets outside profile directory (safety check)
 - Creates metadata entry for profile
 - Profile is ready to use immediately
 
@@ -491,7 +546,7 @@ csp launch work --legacy-global
 - `ANTHROPIC_BASE_URL`
 - `ANTHROPIC_MODEL`
 
-Set `CSP_DEBUG_LAUNCH_ENV=1` to print key-level launch diagnostics (sources only, values are never printed).
+Set `CSP_DEBUG_LAUNCH_ENV=1` to print extended launch diagnostics. Do not use in shared logs because it can include resolved `ANTHROPIC_*` values.
 
 ---
 
@@ -569,7 +624,7 @@ Profiles are stored in `~/.claude-profiles/`:
 - `agents/` — Agent scripts and configurations
 - `skills/` — Custom Luna skills
 - `hooks/` — Pre/post action hooks
-- `statusline.cjs` — Custom statusline
+- `statusline.cjs`, `statusline.sh`, `statusline.ps1` — Custom statusline scripts
 - `.luna.json` — Luna configuration
 
 **Copied Files**:
@@ -672,11 +727,7 @@ Before switching, CSP validates:
 1. Target profile exists
 2. Profile structure is valid
 
-`--force` is currently accepted for compatibility:
-
-```bash
-csp use legacy --force
-```
+During import, CSP also validates profile contents and rejects unsafe symlinks that point outside the imported profile tree.
 
 ## Configuration via Environment Variables
 
@@ -735,7 +786,7 @@ csp use personal  # Switch to personal
 
 ```bash
 # Clone current profile
-csp create experimental --from current -d "Testing new Luna skills"
+csp create experimental --from default -d "Testing new Luna skills"
 
 # Switch and experiment
 csp use experimental
@@ -799,15 +850,14 @@ csp list
 csp use production  # if "production" exists
 ```
 
-### Cannot delete active profile
+### Cannot delete default profile
 
-**Error:** `Cannot delete active profile "default". Switch to another profile first.`
+**Error:** `Cannot delete the default profile.`
 
-**Solution:** Switch to a different profile before deleting.
+**Solution:** Keep `default` and delete only non-default profiles.
 
 ```bash
-csp use production
-csp delete default
+csp delete experimental
 ```
 
 ### Stale lock file
@@ -863,13 +913,16 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and migration guidance.
 │   │   ├── init.js
 │   │   ├── current.js
 │   │   ├── list.js
+│   │   ├── status.js
 │   │   ├── create.js
 │   │   ├── save.js
 │   │   ├── use.js
+│   │   ├── toggle.js
 │   │   ├── delete.js
 │   │   ├── export.js
 │   │   ├── import.js
 │   │   ├── diff.js
+│   │   ├── select.js
 │   │   ├── launch.js
 │   │   ├── deactivate.js
 │   │   └── uninstall.js
@@ -879,6 +932,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and migration guidance.
 │   ├── runtime-instance-manager.js # Isolated runtime sync
 │   ├── item-manager.js           # Managed item copy/move operations
 │   ├── file-operations.js        # File copy/restore operations
+│   ├── launch-effective-env-resolver.js # ANTHROPIC_* launch env resolution
 │   ├── safety.js                 # Locking, backups, validation
 │   ├── profile-validator.js      # Profile validation
 │   └── output-helpers.js         # Console output formatting

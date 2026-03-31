@@ -573,50 +573,15 @@ assert.deepEqual(obj, expectedObj);  // Not strict
 
 ## Performance Guidelines
 
-### File System Operations
-
-Minimize file I/O:
+- Minimize file I/O: read once, reuse data
+- Use template literals for string concatenation
+- Prefer built-in array methods (`filter`, `map`, `Object.keys`)
 
 ```javascript
 // ✓ Good - read once, reuse
 const profiles = readProfiles();
 const isActive = name === getActive();
-
-// ✗ Bad - multiple reads of same data
-const isActive = name === getActive();
-const profileCount = Object.keys(readProfiles()).length;
-```
-
-### String Concatenation
-
-Use template literals:
-
-```javascript
-// ✓ Good
 const message = `Profile "${name}" created at ${profileDir}`;
-
-// ✗ Bad
-const message = 'Profile "' + name + '" created at ' + profileDir;
-```
-
-### Array Operations
-
-Prefer built-in methods:
-
-```javascript
-// ✓ Good
-const profileNames = Object.keys(profiles);
-const diffs = items.filter(item => item.status === 'different');
-
-// ✗ Bad
-const profileNames = [];
-for (const key of Object.keys(profiles)) {
-  profileNames.push(key);
-}
-const diffs = [];
-for (const item of items) {
-  if (item.status === 'different') diffs.push(item);
-}
 ```
 
 ---
@@ -735,129 +700,44 @@ if (!profileExists(name)) {
 
 ## Dependencies & Imports
 
-### Allowed Dependencies
-
-**External:**
-- `chalk@^5.6.2` — Console colors
-- `commander@^14.0.3` — CLI parsing
-
-**Built-in Node.js only:**
-- `fs`, `path`, `os`
-- `child_process` (execSync for tar, execFileSync for process detection, spawn for launch)
-- `readline` (for prompts)
-
-### Adding New Dependencies
-
-Before adding a new package, consider:
-
-1. Is this available in Node.js built-ins?
-2. Does it add significant value?
-3. What's the maintenance burden?
-4. Are there lighter alternatives?
-
-Get approval before adding dependencies.
+**External:** `chalk@^5.6.2` (colors), `commander@^14.0.3` (CLI).
+**Built-in:** `fs`, `path`, `os`, `child_process`, `readline`.
+Get approval before adding new dependencies.
 
 ---
 
 ## Documentation Standards
 
-### README.md
+- **README:** Description, install, quick start, all commands, config, troubleshooting
+- **Code comments:** Non-obvious logic, gotchas, external deps rationale
+- **Architecture docs:** Update when adding modules, changing data structures, or modifying flows
 
-Include:
-- Project description
-- Installation instructions
-- Quick start guide
-- All commands with examples
-- Configuration options
-- Troubleshooting
-
-### Code Comments
-
-Document:
-- Non-obvious logic
-- Complex algorithms
-- Gotchas and edge cases
-- External dependencies (why used)
-
-### Architecture Docs
-
-Update when:
-- Adding new modules
-- Changing data structures
-- Modifying flow/behavior
-
----
-
-## Pre-commit Checklist
-
-Before pushing code:
-
-- [ ] All tests pass (`npm test`)
-- [ ] No console.log (use output helpers)
-- [ ] No hardcoded paths (use constants)
-- [ ] Error messages are actionable
-- [ ] Functions have single responsibility
-- [ ] Comments explain "why", not "what"
-- [ ] File names follow kebab-case
-- [ ] No trailing whitespace
-- [ ] Imports organized (builtins → external → local)
-
----
 
 ## Common Patterns
 
-### Handling Missing Directories
-
 ```javascript
-// ✓ Good - create if missing
+// Handling missing directories
 export const ensureProfilesDir = () => {
-  if (!existsSync(PROFILES_DIR)) {
-    mkdirSync(PROFILES_DIR, { recursive: true });
-  }
-};
-```
-
-### Parsing JSON Safely
-
-```javascript
-// ✓ Good - handles missing files
-export const readProfiles = () => {
-  const metaPath = join(PROFILES_DIR, PROFILES_META);
-  if (!existsSync(metaPath)) return {};
-  return JSON.parse(readFileSync(metaPath, 'utf-8'));
+  if (!existsSync(PROFILES_DIR)) mkdirSync(PROFILES_DIR, { recursive: true });
 };
 
-// Alternative: with error handling
+// Safe JSON reads
 const readJsonSafe = (path) => {
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(readFileSync(path, 'utf-8')); }
+  catch { return {}; }
 };
-```
 
-### Atomic File Writes
-
-```javascript
-// ✓ Good - entire operation is atomic
+// Atomic writes
 export const writeProfiles = (data) => {
   ensureProfilesDir();
   writeFileSync(join(PROFILES_DIR, PROFILES_META), JSON.stringify(data, null, 2) + '\n');
 };
-```
 
-### Resource Cleanup
-
-```javascript
-// ✓ Good - ensures cleanup even on error
+// Resource cleanup
 export const withLock = async (fn) => {
   acquireLock();
-  try {
-    return await fn();
-  } finally {
-    releaseLock();  // Always executes
-  }
+  try { return await fn(); }
+  finally { releaseLock(); }
 };
 ```
 
@@ -865,14 +745,16 @@ export const withLock = async (fn) => {
 
 ## Code Review Checklist
 
-When reviewing code, ensure:
-
-- [ ] Follows naming conventions (camelCase, SCREAMING_SNAKE_CASE)
-- [ ] Functions are under 50 lines and single-purpose
-- [ ] Error handling is explicit (no silent failures)
+- [ ] All tests pass (`npm test`)
+- [ ] No console.log (use output helpers)
+- [ ] No hardcoded paths (use constants)
+- [ ] Error messages are actionable
+- [ ] Functions are single-purpose and under 50 lines
+- [ ] Comments explain "why", not "what"
+- [ ] File names follow kebab-case
+- [ ] Imports organized (builtins → external → local)
 - [ ] File paths use `join()` or `resolve()`
 - [ ] Tests are comprehensive
-- [ ] Comments explain "why", not "what"
 - [ ] Output uses helpers (success, error, info, warn)
 - [ ] No external dependencies added without approval
 - [ ] README/docs updated if behavior changed

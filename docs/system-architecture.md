@@ -235,10 +235,12 @@ readProfiles()                  // Load + normalize profiles.json (legacy/v2)
 writeProfiles(data)             // Save profiles.json in v2 schema
 getActive()                     // Read .active file
 setActive(name)                 // Write .active file
+clearActive()                   // Delete .active file (best effort)
 addProfile(name, metadata)      // Add profile metadata
 removeProfile(name)             // Remove profile metadata
 ensureDefaultProfileSnapshot()  // Materialize guarded default snapshot when safe
 profileExists(name)             // Check if profile dir exists
+validateName(name)              // Ensure name matches /^[a-zA-Z0-9_-]+$/
 getProfileDir(name)             // Return profile directory path
 getRuntimeDir(name)             // Return isolated runtime path
 getProfileMeta(name)            // Return metadata for one profile
@@ -246,6 +248,7 @@ updateProfileMeta(name, patch)  // Patch metadata atomically
 markRuntimeInitialized(name)    // Stamp runtime init + launch timestamps
 markProfileLaunched(name)       // Stamp launch timestamp
 listProfileNames()              // Return all profile names
+getEffectiveDir(name)           // Return CLAUDE_DIR if active, else profileDir
 ```
 
 **State Management:**
@@ -758,8 +761,6 @@ To add protected items (never managed):
 - Mock external calls (pgrep)
 - Assert file system state changes
 
----
-
 ## Performance Characteristics
 
 | Operation | Time | Notes |
@@ -775,46 +776,20 @@ To add protected items (never managed):
 
 **Bottleneck:** File copying (scales with ~/.claude size)
 
----
-
 ## Deployment & Distribution
 
-### Distribution Method
-- npm registry (`npm install -g claude-switch-profile`)
-
-### Installation Footprint
-- Depends on global npm + Node.js environment; no bundled standalone binary is documented in this repository
-
----
+- **Distribution:** npm registry (`npm install -g claude-switch-profile`)
+- **Footprint:** Requires global npm + Node.js; no standalone binary
 
 ## Security Boundaries
 
-### Trust Model
-- Single-user model (per-machine user)
-- Filesystem permissions (standard Unix model)
-- No network access
-- No authentication required
-
-### Trusted Items
-- Profile-managed config files/directories
-- File contents (user responsibility)
-- Lock files (integrity verified via PID)
-
-### Untrusted Items
-- User-provided profile names
-- Archive contents (validated on extract)
-- External configuration data
-
----
+- **Trust model:** Single-user, filesystem permissions, no network access, no auth
+- **Trusted:** Profile config files/dirs, lock files (PID-verified)
+- **Untrusted:** User-provided profile names, archive contents (validated), external config
 
 ## Future Architecture Changes
 
-### Potential Enhancements
-1. **Merge profiles** — Combine configurations from multiple profiles
-2. **Profile versioning** — Keep history of profile states
-3. **Hooks system** — Custom scripts on profile switches
-4. **Web UI** — Browser-based profile manager
-5. **Cloud sync** — Multi-machine profile synchronization
+Profile merging, profile versioning, hooks, web UI, cloud sync.
 
 ---
 
