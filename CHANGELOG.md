@@ -9,6 +9,14 @@ All notable changes to `claude-switch-profile` are documented here.
 
 ---
 
+## [1.4.2] - 2026-03-31
+
+### Changed
+- Re-released the previous patch after an interrupted publish flow (OTP step).
+- No code changes from `1.4.1`; this version reflects successful npm publication and release metadata synchronization.
+
+---
+
 ## [1.4.1] - 2026-03-31
 
 ### Changed
