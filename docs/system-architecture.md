@@ -50,7 +50,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 **Responsibilities:**
 - Load package.json for version
 - Create Commander.js program
-- Register all 16 commands with their options
+- Register all 17 commands with their options
 - Parse command line arguments
 - Invoke appropriate command handler
 
@@ -70,6 +70,7 @@ program.command('import')       // Import from archive
 program.command('diff')         // Compare profiles
 program.command('deactivate')   // Deactivate active profile
 program.command('launch')       // Isolated launch (default) or legacy-global
+program.command('exec')         // Run arbitrary command in isolated runtime env
 program.command('uninstall')    // Remove CSP completely
 program.command('select')       // Interactive profile picker (default command)
 program.command('status')       // CSP status dashboard
@@ -177,10 +178,11 @@ Each command file exports a single async function matching the command name.
 2. If launching `default`, ensure its physical snapshot exists
 3. Default mode: acquire per-profile runtime lock, sync runtime root, resolve effective allowlisted `ANTHROPIC_*` launch env (`settings.json env` > `.env` allowlist > parent env), sanitize inherited launch env (`CLAUDECODE`/`CLAUDE_CONFIG_DIR`), inherited `ANTHROPIC_*`, and Claude session env vars, then set `CLAUDE_CONFIG_DIR` to runtime root (Claude Code auto-discovers config from this path)
 4. Optional `--legacy-global`: call `useCommand()` first
-5. Resolve Claude executable path, then spawn process with forwarded arguments (`where.exe` + Windows fallbacks when needed)
-6. Inherit stdio for interactive use
-7. Forward Claude's exit code
-8. Preserve `default` metadata mode as `legacy` even when launched through isolated runtime sync
+5. `launch`: resolve Claude executable path, then spawn process with forwarded arguments (`where.exe` + Windows fallbacks when needed)
+6. `exec`: on Unix-like systems, run the requested command via the user's interactive shell so aliases/functions resolve dynamically; then reassert isolated `CLAUDE_CONFIG_DIR` and allowlisted `ANTHROPIC_*` after shell init. On Windows, keep direct spawn behavior with `.cmd` / `.bat` wrapper detection
+7. Inherit stdio for interactive use
+8. Forward child exit code
+9. Preserve `default` metadata mode as `legacy` even when launched through isolated runtime sync
 
 #### uninstall.js
 **Flow:**
@@ -550,6 +552,28 @@ Validate profile exists
        CLAUDE_CONFIG_DIR=~/.claude-profiles/.runtime/<profile>
           ↓
        keep .active unchanged
+```
+
+### Isolated Exec Flow (exec command)
+
+```
+csp exec <profile> -- <command> [args...]
+    ↓
+Validate profile exists
+    ↓
+withRuntimeLock(profile, async () => {
+   ensureRuntimeInstance(profile)
+   // sync static config into ~/.claude-profiles/.runtime/<profile>
+})
+    ↓
+resolve launch env (same precedence and sanitization as launch)
+    ↓
+Unix-like: run via interactive shell so aliases/functions resolve
+Windows: direct spawn with wrapper detection
+    ↓
+reassert CLAUDE_CONFIG_DIR + allowlisted ANTHROPIC_* after shell init
+    ↓
+keep .active unchanged
 ```
 
 ### Profile Diff Flow

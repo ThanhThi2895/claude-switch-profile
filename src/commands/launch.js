@@ -1,14 +1,21 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { profileExists, ensureDefaultProfileSnapshot } from '../profile-store.js';
+import { basename, join } from 'node:path';
+import { accessSync, constants as fsConstants, existsSync } from 'node:fs';
+import { info, error } from '../output-helpers.js';
 import { useCommand } from './use.js';
-import { ensureRuntimeInstance } from '../runtime-instance-manager.js';
-import { withRuntimeLock } from '../safety.js';
-import { error, info, warn } from '../output-helpers.js';
 import { isWindows } from '../platform.js';
-import { LAUNCH_CONFIG_ENV, DEFAULT_PROFILE } from '../constants.js';
-import { buildEffectiveLaunchEnv, parseDotEnvLaunchEnv, parseSettingsLaunchEnv, sanitizeInheritedLaunchEnv } from '../launch-effective-env-resolver.js';
+import { LAUNCH_CONFIG_ENV } from '../constants.js';
+import {
+  ensureLaunchProfileReady,
+  formatLaunchEnvDiagnostics,
+  resolveIsolatedLaunchContext,
+  stripInheritedLaunchEnv,
+} from '../isolated-launch-context.js';
+
+export { ensureLaunchProfileReady, formatLaunchEnvDiagnostics, resolveIsolatedLaunchContext, stripInheritedLaunchEnv };
+
+const SHELL_REASSERT_ENV_KEYS = [LAUNCH_CONFIG_ENV, 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'];
+const SAFE_SHELL_COMMAND = /^[A-Za-z0-9_./:@%+-]+$/;
 
 const isTruthyDebugValue = (value) => {
   if (value === undefined || value === null) return false;
@@ -61,140 +68,56 @@ export const resolveClaudeLaunchTarget = (env = process.env, dependencies = {}) 
     return { command: 'claude', shell: true };
   }
 
-  const requiresShell = /\.(cmd|bat)$/i.test(resolvedPath);
-
   return {
-    command: requiresShell ? `"${resolvedPath}"` : resolvedPath,
-    shell: requiresShell,
+    command: /\.(cmd|bat)$/i.test(resolvedPath) ? `"${resolvedPath}"` : resolvedPath,
+    shell: /\.(cmd|bat)$/i.test(resolvedPath),
   };
 };
 
-const readProfileSettingsLaunchEnv = (profileDir) => {
-  const settingsPath = join(profileDir, 'settings.json');
-  if (!existsSync(settingsPath)) return {};
-
-  try {
-    const rawSettings = readFileSync(settingsPath, 'utf-8');
-    return parseSettingsLaunchEnv(rawSettings);
-  } catch {
-    warn(`Could not parse launch env from ${settingsPath}; falling back to inherited env.`);
-    return {};
-  }
-};
-
-const readProfileDotEnvLaunchEnv = (profileDir) => {
-  const dotEnvPath = join(profileDir, '.env');
-  if (!existsSync(dotEnvPath)) return {};
-
-  try {
-    const rawDotEnv = readFileSync(dotEnvPath, 'utf-8');
-    return parseDotEnvLaunchEnv(rawDotEnv);
-  } catch {
-    warn(`Could not parse launch env from ${dotEnvPath}; falling back to inherited env.`);
-    return {};
-  }
-};
-
-const readProfileLaunchEnvSources = (runtimeDir) => {
-  return {
-    profileSettingsEnv: readProfileSettingsLaunchEnv(runtimeDir),
-    profileDotEnvEnv: readProfileDotEnvLaunchEnv(runtimeDir),
-  };
-};
-
-const formatLaunchEnvDiagnostics = (diagnostics = {}) => {
-  const keys = diagnostics.anthropicKeys || [];
-  const sources = diagnostics.anthropicKeySources || {};
-
-  if (!keys.length) {
-    return 'ANTHROPIC_* keys: none';
+export const resolveExecTarget = (command, env = process.env, dependencies = {}) => {
+  const windows = dependencies.isWindows ?? isWindows;
+  if (!windows) {
+    return { command, shell: false };
   }
 
-  const keyDetails = keys
-    .map((key) => `${key}<=${sources[key] || 'unknown'}`)
-    .join(', ');
-
-  return `ANTHROPIC_* keys: ${keyDetails}`;
-};
-
-export const stripInheritedLaunchEnv = (env = process.env) => {
-  const sanitized = sanitizeInheritedLaunchEnv(env);
-  for (const key of Object.keys(sanitized)) {
-    if (key.toUpperCase().startsWith('ANTHROPIC_')) {
-      delete sanitized[key];
-    }
-  }
-  return sanitized;
-};
-
-export const launchCommand = async (name, claudeArgs, options = {}) => {
-  if (name === DEFAULT_PROFILE) {
-    try {
-      ensureDefaultProfileSnapshot();
-    } catch (err) {
-      error(err.message);
-      process.exit(1);
-    }
-  }
-
-  if (!profileExists(name)) {
-    error(`Profile "${name}" does not exist. Run "csp list" to see available profiles.`);
-    process.exit(1);
-  }
-
-  let args = [...(claudeArgs || [])];
-  const legacyFromArgs = args.includes('--legacy-global');
-  if (legacyFromArgs) {
-    args = args.filter((a) => a !== '--legacy-global');
-  }
-
-  let launchEnv = { ...process.env };
-
-  if (options.legacyGlobal || legacyFromArgs) {
-    await useCommand(name, { save: true, skipClaudeCheck: true });
-    info(`Launching legacy/global mode: claude ${args.join(' ')}`.trim());
-  } else {
-    const runtimeDir = await withRuntimeLock(name, async () => ensureRuntimeInstance(name));
-    const { profileSettingsEnv, profileDotEnvEnv } = readProfileLaunchEnvSources(runtimeDir);
-    const { launchEnv: resolvedLaunchEnv, diagnostics } = buildEffectiveLaunchEnv({
-      parentEnv: process.env,
-      profileSettingsEnv,
-      profileDotEnvEnv,
-    });
-
-    launchEnv = {
-      ...resolvedLaunchEnv,
-      [LAUNCH_CONFIG_ENV]: runtimeDir,
+  const execRunner = dependencies.execFileSync || execFileSync;
+  const fileName = basename(command || '').toLowerCase();
+  if (/\.(cmd|bat)$/i.test(command || '') || fileName === 'cmd' || fileName === 'cmd.exe') {
+    return {
+      command: /\s/.test(command || '') ? `"${command}"` : command,
+      shell: true,
     };
-
-    // CLAUDE_CONFIG_DIR already redirects user-level config lookups to the
-    // runtime dir, so the "user" settings source reads {runtimeDir}/settings.json
-    // — which is the correct profile-specific settings. We do NOT exclude "user"
-    // because Claude Code gates skill/hook discovery on it being enabled.
-
-    // Always show launch diagnostics for debugging credential issues
-    info(`Launch env diagnostics (${name}): ${formatLaunchEnvDiagnostics(diagnostics)}`);
-    info(`CLAUDE_CONFIG_DIR=${launchEnv[LAUNCH_CONFIG_ENV]}`);
-    info(`ANTHROPIC_AUTH_TOKEN=${launchEnv.ANTHROPIC_AUTH_TOKEN ? launchEnv.ANTHROPIC_AUTH_TOKEN.slice(0, 8) + '...' : '(not set)'}`);
-    info(`ANTHROPIC_BASE_URL=${launchEnv.ANTHROPIC_BASE_URL || '(not set)'}`);
-
-    if (isTruthyDebugValue(process.env.CSP_DEBUG_LAUNCH_ENV)) {
-      info(`[DEBUG] Full launch env ANTHROPIC keys: ${JSON.stringify(Object.fromEntries(Object.entries(launchEnv).filter(([k]) => k.startsWith('ANTHROPIC_'))))}`);
-    }
-
-    info(`Launching isolated session for profile "${name}": claude ${args.join(' ')}`.trim());
   }
 
-  const launchTarget = resolveClaudeLaunchTarget(launchEnv);
+  try {
+    const resolvedPath = execRunner('where.exe', [command], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env,
+    })
+      .trim()
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .find(Boolean);
 
-  const child = spawn(launchTarget.command, args, {
+    if (resolvedPath && /\.(cmd|bat)$/i.test(resolvedPath)) {
+      return { command, shell: true };
+    }
+  } catch {
+    // Fall back to default non-shell spawn behavior.
+  }
+
+  return { command, shell: false };
+};
+
+const runSpawnedCommand = ({ command, args = [], env, shell = false, errorLabel }) => {
+  const child = spawn(command, args, {
     stdio: 'inherit',
-    shell: launchTarget.shell,
+    shell,
     detached: false,
-    env: launchEnv,
+    env,
   });
 
-  // Forward signals to child instead of killing parent
   const forwardSignal = (sig) => {
     try {
       child.kill(sig);
@@ -202,11 +125,12 @@ export const launchCommand = async (name, claudeArgs, options = {}) => {
       // Child may have already exited
     }
   };
+
   process.on('SIGINT', forwardSignal);
   process.on('SIGTERM', forwardSignal);
 
   child.on('error', (err) => {
-    error(`Failed to launch Claude: ${err.message}`);
+    error(`${errorLabel}: ${err.message}`);
     process.exit(1);
   });
 
@@ -216,6 +140,115 @@ export const launchCommand = async (name, claudeArgs, options = {}) => {
     process.exit(code || 0);
   });
 
-  // Keep process alive while Claude runs
   return new Promise(() => {});
+};
+
+const formatCommand = (command, args = []) => {
+  return [command, ...args].filter((part) => part !== undefined && part !== null && String(part).length > 0).join(' ');
+};
+
+const quoteShellToken = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`;
+const formatShellCommandToken = (value) => (SAFE_SHELL_COMMAND.test(String(value || '')) ? String(value) : quoteShellToken(value));
+const isExecutableFile = (filePath) => {
+  if (!filePath) return false;
+  try {
+    accessSync(filePath, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const getInteractiveShellPath = (env = process.env) => {
+  if (isExecutableFile(env.SHELL)) return env.SHELL;
+  return '/bin/sh';
+};
+
+const buildShellEvalCommand = (command, args = []) => {
+  return [formatShellCommandToken(command), ...args.map((arg) => quoteShellToken(arg))].join(' ');
+};
+
+const buildShellEnvReassertion = (env) => {
+  return SHELL_REASSERT_ENV_KEYS.map((key) => {
+    if (Object.prototype.hasOwnProperty.call(env, key) && env[key] !== undefined) {
+      return `export ${key}=${quoteShellToken(env[key])}`;
+    }
+    return `unset ${key}`;
+  }).join('; ');
+};
+
+const executeViaInteractiveShell = ({ command, args = [], launchEnv, errorLabel }) => {
+  const shellPath = getInteractiveShellPath(launchEnv);
+  const shellEnv = { ...launchEnv, CSP_EXEC_CMD: buildShellEvalCommand(command, args) };
+  const shellScript = `${buildShellEnvReassertion(launchEnv)}; eval "$CSP_EXEC_CMD"`;
+
+  return runSpawnedCommand({
+    command: shellPath,
+    args: ['-ic', shellScript],
+    env: shellEnv,
+    errorLabel,
+  });
+};
+
+export const launchCommand = async (name, claudeArgs, options = {}) => {
+  ensureLaunchProfileReady(name);
+
+  let args = [...(claudeArgs || [])];
+  if (options.legacyGlobal || args.includes('--legacy-global')) {
+    args = args.filter((arg) => arg !== '--legacy-global');
+    await useCommand(name, { save: true, skipClaudeCheck: true });
+    info(`Launching legacy/global mode: claude ${args.join(' ')}`.trim());
+    return runSpawnedCommand({ command: 'claude', args, env: { ...process.env }, errorLabel: 'Failed to launch Claude' });
+  }
+
+  const isolated = await resolveIsolatedLaunchContext(name, process.env);
+  const launchEnv = isolated.launchEnv;
+
+  info(`Launch env diagnostics (${name}): ${formatLaunchEnvDiagnostics(isolated.diagnostics)}`);
+  info(`CLAUDE_CONFIG_DIR=${launchEnv[LAUNCH_CONFIG_ENV]}`);
+  info(`ANTHROPIC_AUTH_TOKEN=${launchEnv.ANTHROPIC_AUTH_TOKEN ? `${launchEnv.ANTHROPIC_AUTH_TOKEN.slice(0, 8)}...` : '(not set)'}`);
+  info(`ANTHROPIC_BASE_URL=${launchEnv.ANTHROPIC_BASE_URL || '(not set)'}`);
+
+  if (isTruthyDebugValue(process.env.CSP_DEBUG_LAUNCH_ENV)) {
+    info(`[DEBUG] Full launch env ANTHROPIC keys: ${JSON.stringify(Object.fromEntries(Object.entries(launchEnv).filter(([key]) => key.startsWith('ANTHROPIC_'))))}`);
+  }
+
+  info(`Launching isolated session for profile "${name}": claude ${args.join(' ')}`.trim());
+
+  const launchTarget = resolveClaudeLaunchTarget(launchEnv);
+  return runSpawnedCommand({ command: launchTarget.command, args, env: launchEnv, shell: launchTarget.shell, errorLabel: 'Failed to launch Claude' });
+};
+
+export const execCommand = async (name, command, commandArgs = []) => {
+  ensureLaunchProfileReady(name);
+
+  const normalizedCommand = typeof command === 'string' ? command.trim() : '';
+  if (!normalizedCommand) {
+    error('Missing command. Usage: csp exec <name> -- <cmd> [args...]');
+    process.exit(1);
+  }
+
+  const isolated = await resolveIsolatedLaunchContext(name, process.env);
+  const launchEnv = isolated.launchEnv;
+
+  info(`Launch env diagnostics (${name}): ${formatLaunchEnvDiagnostics(isolated.diagnostics)}`);
+  info(`CLAUDE_CONFIG_DIR=${launchEnv[LAUNCH_CONFIG_ENV]}`);
+  info(`Executing isolated command for profile "${name}": ${formatCommand(normalizedCommand, commandArgs)}`);
+
+  if (!isWindows) {
+    return executeViaInteractiveShell({
+      command: normalizedCommand,
+      args: commandArgs,
+      launchEnv,
+      errorLabel: `Failed to execute command "${normalizedCommand}"`,
+    });
+  }
+
+  const execTarget = resolveExecTarget(normalizedCommand, launchEnv);
+  return runSpawnedCommand({
+    command: execTarget.command,
+    args: commandArgs,
+    env: launchEnv,
+    shell: execTarget.shell,
+    errorLabel: `Failed to execute command "${normalizedCommand}"`,
+  });
 };
