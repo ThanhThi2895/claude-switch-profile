@@ -9,6 +9,13 @@ All notable changes to `claude-switch-profile` are documented here.
 
 ---
 
+## [1.4.10] - 2026-04-01
+
+### Fixed
+- **Settings Path Mutation Bug**: Fixed a severe issue where hook paths in `settings.json` could exponentially multiply (like `.runtime/default-profiles/.runtime/...`) when saving a profile post-launch. Path mapping logic was strengthened to use exact-boundary Regular Expressions, preventing `.claude` patterns from incorrectly matching adjacent nested paths like `.claude-profiles`.
+
+---
+
 ## [1.4.9] - 2026-04-01
 
 ### Fixed
