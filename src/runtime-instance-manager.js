@@ -77,6 +77,8 @@ const shouldSyncDir = (src, dest) => {
   }
 };
 
+const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const replacePathVariants = (content, fromPath, toPath) => {
   const fromEscaped = fromPath.replaceAll('\\', '\\\\');
   const toEscaped = toPath.replaceAll('\\', '\\\\');
@@ -84,10 +86,20 @@ const replacePathVariants = (content, fromPath, toPath) => {
   const toFwd = toPath.replaceAll('\\', '/');
 
   let updated = content;
-  updated = updated.replaceAll(fromEscaped, toEscaped);
-  updated = updated.replaceAll(fromFwd, toFwd);
+
+  // Prevent matching substrings of other paths (e.g. ~/.claude matching ~/.claude-profiles)
+  // by ensuring it's not immediately followed by an alphanumeric character or hyphen.
+  const negativeLookahead = '(?![a-zA-Z0-9\\-])';
+
+  const replaceWithRegex = (str, targetF, targetT) => {
+    const re = new RegExp(escapeRegExp(targetF) + negativeLookahead, 'g');
+    return str.replace(re, targetT);
+  };
+
+  updated = replaceWithRegex(updated, fromEscaped, toEscaped);
+  updated = replaceWithRegex(updated, fromFwd, toFwd);
   if (fromPath !== fromEscaped) {
-    updated = updated.replaceAll(fromPath, toPath);
+    updated = replaceWithRegex(updated, fromPath, toPath);
   }
 
   return updated;
