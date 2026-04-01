@@ -3,6 +3,7 @@ plans/
 docs/
 .agents-hd/
 .claude/
+.cocoindex_code/
 .gitignore
 *.tar.gz
 .DS_Store
