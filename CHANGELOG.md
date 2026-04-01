@@ -9,6 +9,22 @@ All notable changes to `claude-switch-profile` are documented here.
 
 ---
 
+## [1.4.8] - 2026-04-01
+
+### Changed
+- Re-ran release flow to publish the latest patch after `1.4.7`.
+- No functional code changes compared with `1.4.7`; this release aligns npm package/version metadata.
+
+---
+
+## [1.4.7] - 2026-04-01
+
+### Fixed
+- Release pipeline now restores annotated git tag publishing.
+- Local agent artifacts are ignored by git to keep release working tree clean.
+
+---
+
 ## [1.4.2] - 2026-03-31
 
 ### Changed
