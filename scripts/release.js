@@ -125,18 +125,15 @@ const main = () => {
 
   run('git add package.json');
   run(`git commit -m "chore(release): v${newVersion}"`);
-  run(`git tag -a v${newVersion} -m "v${newVersion}"`);
-  console.log(`✓ Created tag v${newVersion}`);
 
   console.log('\nPublishing to npm...');
   run('npm publish');
   console.log(`✓ Published claude-switch-profile@${newVersion}`);
 
   run('git push');
-  run('git push --tags');
-  console.log('✓ Pushed to remote with tags\n');
+  console.log('✓ Pushed release commit to remote\n');
 
-  console.log(`🎉 Released v${newVersion} successfully!`);
+  console.log(`🎉 Published claude-switch-profile@${newVersion} and pushed release commit successfully!`);
 };
 
 try {
