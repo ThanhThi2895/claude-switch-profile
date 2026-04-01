@@ -11,6 +11,7 @@ import {
   readlinkSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { MANAGED_ITEMS, COPY_ITEMS, COPY_DIRS, CLAUDE_DIR } from './constants.js';
 import {
   getActive,
@@ -102,6 +103,25 @@ const rewriteSettingsForRuntime = (runtimeDir, sourceDir) => {
 
     updated = replacePathVariants(updated, sourceDir, runtimeDir);
     updated = replacePathVariants(updated, CLAUDE_DIR, runtimeDir);
+
+    // Also replace shell variable patterns commonly used in hook commands.
+    // Hook commands in settings.json often reference paths like:
+    //   $HOME/.claude/hooks/...  or  ${HOME}/.claude/hooks/...  or  ~/.claude/hooks/...
+    // These won't match the literal path replacement above.
+    const home = homedir();
+    const claudeRelSuffix = CLAUDE_DIR.startsWith(home) ? CLAUDE_DIR.slice(home.length) : '/.claude';
+
+    const shellPatterns = [
+      `$HOME${claudeRelSuffix}`,
+      `\${HOME}${claudeRelSuffix}`,
+      `~${claudeRelSuffix}`,
+    ];
+
+    for (const pattern of shellPatterns) {
+      if (updated.includes(pattern)) {
+        updated = updated.replaceAll(pattern, runtimeDir);
+      }
+    }
 
     if (updated !== raw) {
       writeFileSync(settingsPath, updated);

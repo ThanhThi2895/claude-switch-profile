@@ -9,6 +9,13 @@ All notable changes to `claude-switch-profile` are documented here.
 
 ---
 
+## [1.4.9] - 2026-04-01
+
+### Fixed
+- **Hooks execution in isolated mode**: Fixed an issue where Claude Code hook scripts failed to execute in isolated profiles. The runtime instance manager now correctly resolves shell variables (`$HOME`, `${HOME}`, `~`) within `settings.json` hook commands to accurately point to the isolated runtime directory.
+
+---
+
 ## [1.4.8] - 2026-04-01
 
 ### Changed

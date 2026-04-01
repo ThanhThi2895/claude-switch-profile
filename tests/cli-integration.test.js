@@ -1013,6 +1013,73 @@ describe('CLI Integration', () => {
     assert.equal(captured.ANTHROPIC_MODEL, 'isolated-model');
   });
 
+  it('launch rewrites shell variable hook paths in settings.json to runtime dir', () => {
+    run('init', envOverrides);
+    run('create hookprofile -d "Hook Profile"', envOverrides);
+
+    writeFileSync(
+      join(profilesDir, 'hookprofile', 'settings.json'),
+      JSON.stringify(
+        {
+          skipDangerousModePermissionPrompt: true,
+          hooks: {
+            SessionStart: [
+              {
+                matcher: 'startup',
+                hooks: [
+                  {
+                    type: 'command',
+                    command: `node "$HOME/.claude/hooks/session-init.cjs"`,
+                  },
+                ],
+              },
+            ],
+            PreToolUse: [
+              {
+                matcher: 'Write',
+                hooks: [
+                  {
+                    type: 'command',
+                    command: `node "\${HOME}/.claude/hooks/descriptive-name.cjs"`,
+                  },
+                ],
+              },
+            ],
+            PostToolUse: [
+              {
+                matcher: 'Write',
+                hooks: [
+                  {
+                    type: 'command',
+                    command: `node "~/.claude/hooks/post-edit.cjs"`,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    run('launch hookprofile -- --version', envOverrides);
+
+    const runtimeSettingsPath = join(profilesDir, '.runtime', 'hookprofile', 'settings.json');
+    const runtimeSettings = readFileSync(runtimeSettingsPath, 'utf-8');
+    const runtimeDir = join(profilesDir, '.runtime', 'hookprofile');
+
+    // All shell variable patterns should be rewritten to the runtime directory
+    assert.ok(!runtimeSettings.includes('$HOME/.claude/'), 'should not contain $HOME/.claude/');
+    assert.ok(!runtimeSettings.includes('${HOME}/.claude/'), 'should not contain ${HOME}/.claude/');
+    assert.ok(!runtimeSettings.includes('~/.claude/'), 'should not contain ~/.claude/');
+
+    // The runtime directory path should be present instead
+    assert.ok(runtimeSettings.includes(`${runtimeDir}/hooks/session-init.cjs`), 'session-init should point to runtime');
+    assert.ok(runtimeSettings.includes(`${runtimeDir}/hooks/descriptive-name.cjs`), 'descriptive-name should point to runtime');
+    assert.ok(runtimeSettings.includes(`${runtimeDir}/hooks/post-edit.cjs`), 'post-edit should point to runtime');
+  });
+
   it('exec validates missing command usage', () => {
     run('init', envOverrides);
     run('create exece -d "Exec Error"', envOverrides);
