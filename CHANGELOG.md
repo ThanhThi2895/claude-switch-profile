@@ -9,6 +9,13 @@ All notable changes to `claude-switch-profile` are documented here.
 
 ---
 
+## [1.4.11] - 2026-04-01
+
+### Changed
+- Version bump only — no functional code changes from `1.4.10`.
+
+---
+
 ## [1.4.10] - 2026-04-01
 
 ### Fixed
@@ -36,6 +43,39 @@ All notable changes to `claude-switch-profile` are documented here.
 ### Fixed
 - Release pipeline now restores annotated git tag publishing.
 - Local agent artifacts are ignored by git to keep release working tree clean.
+
+---
+
+## [1.4.6] - 2026-03-31
+
+### Fixed
+- Excluded cocoindex cache from npm package to reduce published size.
+
+---
+
+## [1.4.5] - 2026-03-31
+
+### Fixed
+- Release pipeline: stopped creating duplicate git tags during release.
+
+---
+
+## [1.4.4] - 2026-03-31
+
+### Fixed
+- Release pipeline: handled noisy test output that could interrupt release flow.
+
+---
+
+## [1.4.3] - 2026-03-31
+
+### Added
+- ✨ **`csp exec` command** — Run an arbitrary command inside an isolated profile runtime environment. Similar to `csp launch` but runs any command (not just Claude) under profile-scoped env. Supports `--` separator for command arguments.
+- ✨ **Dynamic shell support for `csp exec`** — On Unix-like systems, commands run through the user's interactive shell so shell aliases and functions resolve naturally while keeping runtime isolation intact.
+
+### Changed
+- Refactored `launch.js` to share context setup with `exec` via `isolated-launch-context.js`.
+- On Windows, `exec` falls back to direct spawn with `.cmd` / `.bat` wrapper detection.
 
 ---
 
