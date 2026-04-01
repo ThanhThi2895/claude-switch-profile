@@ -14,9 +14,41 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const PKG_PATH = join(ROOT, 'package.json');
+const TEST_SUMMARY_PATTERN = /^# (tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\b/;
 
-const run = (cmd) => execSync(cmd, { cwd: ROOT, stdio: 'inherit' });
-const runQuiet = (cmd) => execSync(cmd, { cwd: ROOT, encoding: 'utf-8' }).trim();
+const run = (cmd, options = {}) => {
+  return execSync(cmd, {
+    cwd: ROOT,
+    encoding: 'utf-8',
+    stdio: 'inherit',
+    ...options,
+  });
+};
+
+const runQuiet = (cmd) => run(cmd, { stdio: 'pipe' }).trim();
+
+const fail = (message, details = '') => {
+  console.error(`✗ ${message}`);
+  if (details) console.error(details);
+  process.exit(1);
+};
+
+const formatCommandOutput = (error) => {
+  const stdout = error?.stdout?.toString?.() || '';
+  const stderr = error?.stderr?.toString?.() || '';
+  return [stdout.trim(), stderr.trim()].filter(Boolean).join('\n');
+};
+
+const printTestSummary = (output) => {
+  const summary = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => TEST_SUMMARY_PATTERN.test(line))
+    .map((line) => line.replace(/^#\s*/, ''))
+    .join('\n');
+
+  if (summary) console.log(summary);
+};
 
 // --- Helpers ---
 
@@ -33,17 +65,14 @@ const bumpVersion = (current, type) => {
 const checkCleanWorkingTree = () => {
   const status = runQuiet('git status --porcelain');
   if (status) {
-    console.error('✗ Working tree is not clean. Commit or stash changes first.');
-    console.error(status);
-    process.exit(1);
+    fail('Working tree is not clean. Commit or stash changes first.', status);
   }
 };
 
 const checkOnMainBranch = () => {
   const branch = runQuiet('git branch --show-current');
   if (branch !== 'main' && branch !== 'master') {
-    console.error(`✗ Must be on main/master branch. Current: ${branch}`);
-    process.exit(1);
+    fail(`Must be on main/master branch. Current: ${branch}`);
   }
 };
 
@@ -51,8 +80,20 @@ const checkNpmAuth = () => {
   try {
     runQuiet('npm whoami');
   } catch {
-    console.error('✗ Not logged in to npm. Run "npm login" first.');
-    process.exit(1);
+    fail('Not logged in to npm. Run "npm login" first.');
+  }
+};
+
+const runTests = () => {
+  console.log('Running tests...');
+
+  try {
+    const output = run('npm test', { stdio: 'pipe' });
+    printTestSummary(output);
+    console.log('✓ Tests passed\n');
+  } catch (error) {
+    const output = formatCommandOutput(error);
+    fail('Tests failed. Release aborted.', output);
   }
 };
 
@@ -61,50 +102,45 @@ const checkNpmAuth = () => {
 const main = () => {
   const type = process.argv[2] || 'patch';
   if (!['patch', 'minor', 'major'].includes(type)) {
-    console.error(`✗ Invalid bump type: "${type}". Use patch, minor, or major.`);
-    process.exit(1);
+    fail(`Invalid bump type: "${type}". Use patch, minor, or major.`);
   }
 
-  // Pre-flight checks
   console.log('Pre-flight checks...');
   checkCleanWorkingTree();
   checkOnMainBranch();
   checkNpmAuth();
   console.log('✓ All checks passed\n');
 
-  // Read current version
   const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf-8'));
   const oldVersion = pkg.version;
   const newVersion = bumpVersion(oldVersion, type);
 
   console.log(`Bumping version: ${oldVersion} → ${newVersion} (${type})\n`);
 
-  // Run tests
-  console.log('Running tests...');
-  run('npm test');
-  console.log('✓ Tests passed\n');
+  runTests();
 
-  // Update package.json version
   pkg.version = newVersion;
   writeFileSync(PKG_PATH, JSON.stringify(pkg, null, 2) + '\n');
   console.log(`✓ Updated package.json to ${newVersion}`);
 
-  // Git commit + tag
   run('git add package.json');
   run(`git commit -m "chore(release): v${newVersion}"`);
   run(`git tag -a v${newVersion} -m "v${newVersion}"`);
   console.log(`✓ Created tag v${newVersion}`);
 
-  // Publish to npm
   console.log('\nPublishing to npm...');
   run('npm publish');
   console.log(`✓ Published claude-switch-profile@${newVersion}`);
 
-  // Push to remote
-  run('git push && git push --tags');
-  console.log(`✓ Pushed to remote with tags\n`);
+  run('git push');
+  run('git push --tags');
+  console.log('✓ Pushed to remote with tags\n');
 
   console.log(`🎉 Released v${newVersion} successfully!`);
 };
 
-main();
+try {
+  main();
+} catch (error) {
+  fail('Release failed.', formatCommandOutput(error));
+}
