@@ -276,6 +276,7 @@ syncStaticConfig(profileName)      // Sync managed static config into runtime
 
 **Key Behaviors:**
 - Syncs static profile config (managed items + copied files/dirs)
+- Resolves runtime source by profile state: active `default` launches from live `~/.claude`; non-default profiles (including active non-default) and inactive `default` launch from the stored profile snapshot
 - Preserves managed-item symlinks during runtime sync by copying with symlink-aware filesystem operations instead of flattening links into plain directories/files
 - Keeps runtime/account continuity isolated per profile runtime root
 - Rewrites settings paths for runtime root when needed
@@ -545,6 +546,9 @@ Validate profile exists
           ↓
        withRuntimeLock(profile, async () => {
           ensureRuntimeInstance(profile)
+          // source selection for runtime sync:
+          // - active default => live ~/.claude
+          // - inactive default or any non-default => ~/.claude-profiles/<profile>
           // sync static config into ~/.claude-profiles/.runtime/<profile>
        })
           ↓

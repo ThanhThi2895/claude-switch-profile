@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { MANAGED_ITEMS, COPY_ITEMS, COPY_DIRS, CLAUDE_DIR } from './constants.js';
+import { MANAGED_ITEMS, COPY_ITEMS, COPY_DIRS, CLAUDE_DIR, DEFAULT_PROFILE } from './constants.js';
 import {
   getActive,
   getProfileDir,
@@ -147,23 +147,20 @@ const getStaticItems = () => {
   return [...new Set([...MANAGED_ITEMS, ...COPY_ITEMS, ...COPY_DIRS])];
 };
 
+const shouldUseLiveClaudeDir = (profileName) => {
+  return profileName === DEFAULT_PROFILE && getActive() === profileName;
+};
+
 const resolveSourceDir = (profileName) => {
-  const active = getActive();
-  return active === profileName ? CLAUDE_DIR : getProfileDir(profileName);
+  return shouldUseLiveClaudeDir(profileName) ? CLAUDE_DIR : getProfileDir(profileName);
 };
 
 const resolveItemSource = (profileName, item) => {
   const profileDir = getProfileDir(profileName);
-  const active = getActive();
-  const profileIsActive = active === profileName;
 
-  if (profileIsActive) {
+  if (shouldUseLiveClaudeDir(profileName)) {
     const claudePath = join(CLAUDE_DIR, item);
     if (existsSync(claudePath)) return claudePath;
-
-    const profilePath = join(profileDir, item);
-    if (existsSync(profilePath)) return profilePath;
-    return null;
   }
 
   const profilePath = join(profileDir, item);
