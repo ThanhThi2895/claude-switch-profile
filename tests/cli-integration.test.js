@@ -135,7 +135,7 @@ describe('CLI Integration', () => {
     assert.ok(output.includes('No profiles found'));
   });
 
-  it('create produces a full clone profile (inherits current state)', () => {
+  it('create produces an empty profile by default', () => {
     const output = run('create testprofile -d "Test profile"', envOverrides);
     assert.ok(output.includes('testprofile'));
 
@@ -143,8 +143,14 @@ describe('CLI Integration', () => {
     assert.ok(existsSync(join(profilesDir, 'testprofile')));
     assert.ok(existsSync(join(profilesDir, 'testprofile', 'source.json')));
 
-    // Full clone now copies mutable files from current state
-    assert.equal(existsSync(join(profilesDir, 'testprofile', 'settings.json')), true);
+    // Default create should be empty (no inherited mutable files)
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'settings.json')), false);
+
+    // Managed dirs are created empty
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'rules')), true);
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'agents')), true);
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'skills')), true);
+    assert.equal(existsSync(join(profilesDir, 'testprofile', 'hooks')), true);
 
     // Verify profiles.json was updated
     const profilesMeta = JSON.parse(readFileSync(join(profilesDir, 'profiles.json'), 'utf-8'));
@@ -372,7 +378,7 @@ describe('CLI Integration', () => {
     run('init', envOverrides);
 
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Updated default');
-    run('create work -d "Work"', envOverrides);
+    run('create work --from default -d "Work"', envOverrides);
     writeFileSync(join(profilesDir, 'work', 'CLAUDE.md'), '# Work profile');
 
     const output = run('use work', envOverrides);
@@ -602,10 +608,22 @@ describe('CLI Integration', () => {
 
     // Create two profiles with different content
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Alpha');
-    run('create alpha -d "Alpha"', envOverrides);
+    run('create alpha --from default -d "Alpha"', envOverrides);
+
+    writeFileSync(join(profilesDir, 'alpha', 'CLAUDE.md'), '# Alpha');
+    writeFileSync(
+      join(profilesDir, 'alpha', 'source.json'),
+      JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'alpha', 'CLAUDE.md') }, null, 2),
+    );
 
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Beta');
-    run('create beta -d "Beta"', envOverrides);
+    run('create beta --from default -d "Beta"', envOverrides);
+
+    writeFileSync(join(profilesDir, 'beta', 'CLAUDE.md'), '# Beta');
+    writeFileSync(
+      join(profilesDir, 'beta', 'source.json'),
+      JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'beta', 'CLAUDE.md') }, null, 2),
+    );
 
     // Switch from beta to alpha — should move items
     run('use alpha', envOverrides);
@@ -619,10 +637,20 @@ describe('CLI Integration', () => {
     run('init', envOverrides);
 
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# First');
-    run('create first -d "First"', envOverrides);
+    run('create first --from default -d "First"', envOverrides);
+    writeFileSync(join(profilesDir, 'first', 'CLAUDE.md'), '# First');
+    writeFileSync(
+      join(profilesDir, 'first', 'source.json'),
+      JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'first', 'CLAUDE.md') }, null, 2),
+    );
 
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Second');
-    run('create second -d "Second"', envOverrides);
+    run('create second --from default -d "Second"', envOverrides);
+    writeFileSync(join(profilesDir, 'second', 'CLAUDE.md'), '# Second');
+    writeFileSync(
+      join(profilesDir, 'second', 'source.json'),
+      JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'second', 'CLAUDE.md') }, null, 2),
+    );
 
     // Switch to first
     run('use first', envOverrides);
