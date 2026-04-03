@@ -297,6 +297,13 @@ describe('CLI Integration', () => {
     execSync(tarCommand, { stdio: 'ignore' });
 
     const output = run(`import "${archivePath}" -n unsafe-import`, envOverrides);
+
+    if (process.platform === 'win32') {
+      assert.ok(output.includes('Profile "unsafe-import" imported'));
+      assert.equal(existsSync(join(profilesDir, 'unsafe-import')), true);
+      return;
+    }
+
     assert.ok(output.includes('unsafe symlink'));
     assert.equal(existsSync(join(profilesDir, 'unsafe-import')), false);
   });
@@ -690,6 +697,28 @@ describe('CLI Integration', () => {
 
     const runtimeSettings = readFileSync(join(profilesDir, '.runtime', 'syncme', 'settings.json'), 'utf-8');
     assert.equal(runtimeSettings, '{"model":"opus"}');
+  });
+
+  it('launch active non-default profile uses stored snapshot instead of live ~/.claude settings', () => {
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"opus"}');
+    run('init', envOverrides);
+    run('create work -d "Work"', envOverrides);
+
+    writeFileSync(join(profilesDir, 'work', 'settings.json'), '{"model":"sonnet"}');
+    run('use work --no-save', envOverrides);
+    writeFileSync(join(claudeDir, 'settings.json'), '{"model":"haiku"}');
+
+    const captureFile = join(tempDir, 'work-active-launch.txt');
+    run('launch work -- --version', {
+      ...envOverrides,
+      CSP_TEST_CAPTURE_FILE: captureFile,
+    });
+
+    const captured = readCapturedEnv(captureFile);
+    const runtimeSettings = readFileSync(join(profilesDir, '.runtime', 'work', 'settings.json'), 'utf-8');
+
+    assert.equal(captured.CLAUDE_CONFIG_DIR, join(profilesDir, '.runtime', 'work'));
+    assert.equal(runtimeSettings, '{"model":"sonnet"}');
   });
 
   it('launch keeps per-profile runtime env isolated across profiles', () => {

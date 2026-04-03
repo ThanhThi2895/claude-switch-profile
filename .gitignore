@@ -6,3 +6,4 @@ node_modules/
 /.cocoindex_code/
 # Plans
 /plans/
+.claude/
