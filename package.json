@@ -1,6 +1,6 @@
 {
   "name": "claude-switch-profile",
-  "version": "1.4.12",
+  "version": "1.4.13",
   "description": "CLI tool for managing multiple Claude Code profiles",
   "type": "module",
   "bin": {
