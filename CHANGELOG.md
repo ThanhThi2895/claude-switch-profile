@@ -9,6 +9,14 @@ All notable changes to `claude-switch-profile` are documented here.
 
 ---
 
+## [1.4.12] - 2026-04-02
+
+### Fixed
+- **Isolated launch snapshot semantics**: Fixed an issue where launching a non-default profile in isolated mode could seed runtime state from the live `~/.claude` directory instead of the stored profile snapshot. Isolated launches now preserve the selected profile's saved snapshot semantics.
+- **CLI integration coverage across platforms**: Updated CLI integration tests to align with Windows tar behavior so the test suite remains green on multiple platforms.
+
+---
+
 ## [1.4.11] - 2026-04-01
 
 ### Changed
