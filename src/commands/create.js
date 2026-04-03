@@ -1,8 +1,8 @@
-import { mkdirSync, cpSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, cpSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addProfile, getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
-import { saveFiles, updateSettingsPaths } from '../file-operations.js';
-import { CLAUDE_DIR, MANAGED_ITEMS, MANAGED_DIRS, SOURCE_FILE, NEVER_CLONE } from '../constants.js';
+import { saveFiles } from '../file-operations.js';
+import { CLAUDE_DIR, MANAGED_ITEMS, MANAGED_DIRS, SOURCE_FILE } from '../constants.js';
 import { success, error, info, warn } from '../output-helpers.js';
 
 export const createCommand = (name, options) => {
@@ -68,46 +68,21 @@ export const createCommand = (name, options) => {
     // Also copy current mutable files
     saveFiles(profileDir);
   } else {
-    // Create new profile — full clone of ~/.claude/ (blacklist approach)
+    // Create new profile — empty by default
     mkdirSync(profileDir, { recursive: true });
 
     const sourceMap = {};
-    let entries;
-    try {
-      entries = readdirSync(CLAUDE_DIR);
-    } catch {
-      entries = [];
-    }
 
-    for (const entry of entries) {
-      if (NEVER_CLONE.includes(entry)) continue;
-
-      const src = join(CLAUDE_DIR, entry);
-      try {
-        const dest = join(profileDir, entry);
-        cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
-
-        if (MANAGED_ITEMS.includes(entry)) {
-          sourceMap[entry] = dest;
-        }
-      } catch { /* skip unreadable items */ }
-    }
-
-    // Ensure empty dirs for any missing MANAGED_DIRS
+    // Ensure empty dirs for MANAGED_DIRS
     for (const item of MANAGED_DIRS) {
-      if (!sourceMap[item]) {
-        const itemDir = join(profileDir, item);
-        mkdirSync(itemDir, { recursive: true });
-        sourceMap[item] = itemDir;
-      }
+      const itemDir = join(profileDir, item);
+      mkdirSync(itemDir, { recursive: true });
+      sourceMap[item] = itemDir;
     }
 
     writeFileSync(join(profileDir, SOURCE_FILE), JSON.stringify(sourceMap, null, 2) + '\n');
 
-    // Update absolute paths in settings.json
-    updateSettingsPaths(profileDir, 'save');
-
-    info('Created new profile (full clone of current state)');
+    info('Created new profile (empty by default)');
   }
 
   addProfile(name, { description: options.description || '', mode: 'account-session' });
