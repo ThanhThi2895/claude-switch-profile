@@ -73,8 +73,8 @@ program
   .action(saveCommand);
 
 program
-  .command('use <name>')
-  .description('Switch to a different profile')
+  .command('use [name]')
+  .description('Switch to a different profile (defaults to "default")')
   .option('--dry-run', 'Show what would change without executing')
   .option('--no-save', 'Skip saving current profile before switching')
   .action(useCommand);
