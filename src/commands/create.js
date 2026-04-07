@@ -2,7 +2,7 @@ import { mkdirSync, cpSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addProfile, getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
 import { saveFiles } from '../file-operations.js';
-import { CLAUDE_DIR, MANAGED_ITEMS, MANAGED_DIRS, SOURCE_FILE } from '../constants.js';
+import { CLAUDE_DIR, MANAGED_ITEMS, MANAGED_DIRS, COPY_ITEMS, COPY_DIRS, SOURCE_FILE } from '../constants.js';
 import { success, error, info, warn } from '../output-helpers.js';
 
 export const createCommand = (name, options) => {
@@ -68,21 +68,42 @@ export const createCommand = (name, options) => {
     // Also copy current mutable files
     saveFiles(profileDir);
   } else {
-    // Create new profile — empty by default
+    // Create new profile — fully stubbed so `csp use` can cleanly overwrite ~/.claude
     mkdirSync(profileDir, { recursive: true });
 
     const sourceMap = {};
 
-    // Ensure empty dirs for MANAGED_DIRS
+    // MANAGED_DIRS → empty directories (rules, agents, skills, hooks)
     for (const item of MANAGED_DIRS) {
       const itemDir = join(profileDir, item);
       mkdirSync(itemDir, { recursive: true });
       sourceMap[item] = itemDir;
     }
 
+    // MANAGED_FILES → empty file stubs (CLAUDE.md, statusline.*, .luna.json)
+    // These must exist so moveItemsToClaude can overwrite the old profile's copies
+    const managedFiles = MANAGED_ITEMS.filter((item) => !MANAGED_DIRS.includes(item));
+    for (const item of managedFiles) {
+      const dest = join(profileDir, item);
+      writeFileSync(dest, item.endsWith('.json') ? '{\n}\n' : '');
+      sourceMap[item] = dest;
+    }
+
+    // COPY_ITEMS → empty file stubs (settings.json, .mcp.json, .env, …)
+    // These must exist so restoreFiles can overwrite the old profile's copies
+    for (const item of COPY_ITEMS) {
+      writeFileSync(join(profileDir, item), item.endsWith('.json') ? '{\n}\n' : '');
+    }
+
+    // COPY_DIRS → empty directories (commands, plugins, workflows, scripts, …)
+    // These must exist so moveDirsToClaude can overwrite the old profile's dirs
+    for (const dir of COPY_DIRS) {
+      mkdirSync(join(profileDir, dir), { recursive: true });
+    }
+
     writeFileSync(join(profileDir, SOURCE_FILE), JSON.stringify(sourceMap, null, 2) + '\n');
 
-    info('Created new profile (empty by default)');
+    info('Created new profile (empty — all stubs initialised)');
   }
 
   addProfile(name, { description: options.description || '', mode: 'account-session' });
