@@ -33,6 +33,14 @@ const ensureDefaultProfileIfNeeded = (name) => {
 };
 
 export const useCommand = async (name, options = {}) => {
+  if (typeof name === 'object') {
+    options = name;
+    name = 'default';
+  }
+  if (!name) {
+    name = 'default';
+  }
+
   if (!options.skipClaudeCheck) {
     warn('Note: "csp use" modifies ~/.claude directly (legacy mode).');
     info('Prefer "csp launch <name>" for isolated sessions that never touch ~/.claude.');
