@@ -1,8 +1,7 @@
-name: Release on merge to main
+name: Release on push to main
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 permissions:
@@ -10,7 +9,6 @@ permissions:
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
