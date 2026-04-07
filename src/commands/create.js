@@ -2,7 +2,7 @@ import { mkdirSync, cpSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { addProfile, getActive, setActive, profileExists, getProfileDir } from '../profile-store.js';
 import { saveFiles } from '../file-operations.js';
-import { CLAUDE_DIR, MANAGED_ITEMS, MANAGED_DIRS, COPY_ITEMS, COPY_DIRS, SOURCE_FILE } from '../constants.js';
+import { CLAUDE_DIR, MANAGED_ITEMS, MANAGED_DIRS, COPY_DIRS, SOURCE_FILE } from '../constants.js';
 import { success, error, info, warn } from '../output-helpers.js';
 
 export const createCommand = (name, options) => {
@@ -87,12 +87,6 @@ export const createCommand = (name, options) => {
       const dest = join(profileDir, item);
       writeFileSync(dest, item.endsWith('.json') ? '{\n}\n' : '');
       sourceMap[item] = dest;
-    }
-
-    // COPY_ITEMS → empty file stubs (settings.json, .mcp.json, .env, …)
-    // These must exist so restoreFiles can overwrite the old profile's copies
-    for (const item of COPY_ITEMS) {
-      writeFileSync(join(profileDir, item), item.endsWith('.json') ? '{\n}\n' : '');
     }
 
     // COPY_DIRS → empty directories (commands, plugins, workflows, scripts, …)
