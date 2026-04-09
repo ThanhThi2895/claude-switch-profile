@@ -3,8 +3,8 @@ require "language/node"
 class ClaudeSwitchProfile < Formula
   desc "CLI tool for managing multiple Claude Code profiles"
   homepage "https://github.com/ThanhThi2895/claude-switch-profile"
-  url "https://registry.npmjs.org/claude-switch-profile/-/claude-switch-profile-1.4.21.tgz"
-  sha256 "a76a2c269e592ec1e2c759c8afcbbdd2d4b8955a300a2bb16aea90d48afa74a5"
+  url "https://registry.npmjs.org/claude-switch-profile/-/claude-switch-profile-1.4.22.tgz"
+  sha256 "4d828740a0d3c6e77093ca074686ab71412589c6eaa987a0d2e92002294e1a95"
   license "MIT"
 
   depends_on "node"
