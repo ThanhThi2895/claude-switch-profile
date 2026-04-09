@@ -3,6 +3,9 @@ name: Update Homebrew Formula
 on:
   push:
     tags: ['v*']
+  workflow_run:
+    workflows: ["Release on push to main"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -11,18 +14,23 @@ on:
 
 jobs:
   bump-formula:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write # Cho phép GITHUB_TOKEN mặc định được ghi dữ liệu vào repo này
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve Version
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version)")
           else
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"
