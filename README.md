@@ -20,11 +20,38 @@ Profiles are stored in `~/.claude-profiles/` and are never managed by Claude Cod
 
 ## Installation
 
+CSP distributes using decoupled local installations. This ensures your `csp` command doesn't spontaneously break or disappear when switching Node compilation environments via managers like `nvm` or `fnm`.
+
+**Requirements:** Node.js >= 18.0.0 | macOS/Linux/Windows 10+
+
+### Option 1: Standalone Bash Installer (Recommended)
+
+Creates an isolated environment untouched by NVM lifecycle changes (Supports macOS, Linux, and Windows Git Bash):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ThanhThi2895/claude-switch-profile/main/install.sh | bash
+```
+
+*Note: The script safely creates a resilient executable wrapper at `~/.local/bin/csp`. Please ensure `~/.local/bin` is in your `$PATH`.*
+
+### Option 2: Homebrew (macOS / Linux)
+
+Leverages Homebrew's own managed cellars to isolate the Node engine:
+
+```bash
+brew tap ThanhThi2895/homebrew-tap
+brew install claude-switch-profile
+```
+*(Note: Requires the tap to be published to GitHub)*
+
+### Option 3: Global NPM (Legacy Fallback)
+
+⚠️ **Not Recommended:** Global installs tie the tool to your *current* Node version. The `csp` command will disappear from `$PATH` if you change node versions.
+
 ```bash
 npm install -g claude-switch-profile
 ```
 
-**Requirements:** Node.js >= 18.0.0 | macOS/Linux/Windows 10+
 
 ## Quick Start
 
