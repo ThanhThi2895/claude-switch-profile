@@ -186,15 +186,11 @@ Each command file exports a single async function matching the command name.
 
 #### uninstall.js
 **Flow:**
-1. Check if profiles directory exists
-2. Show summary of what will happen
-3. Prompt for confirmation (unless `--force`)
-4. Warn if Claude is running
-5. Acquire lock and create final backup (best effort)
-6. Remove all managed items from `~/.claude`
-7. Restore chosen profile (active or `--profile`), including `default` when selected
-8. Release lock, delete `~/.claude-profiles/` entirely
-9. Print npm uninstall reminder
+1. Validate `--method` (`npm`, `brew`, `standalone`)
+2. Show summary and confirmation prompt (unless `--force`)
+3. Keep `~/.claude-profiles/` unchanged (no profile deletion)
+4. For `standalone`, remove `~/.local/bin/csp` and `~/.csp-cli`
+5. For `npm`/`brew`, print exact uninstall command to run
 
 #### select.js (default command)
 **Flow:**

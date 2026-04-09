@@ -152,9 +152,9 @@ program
 
 program
   .command('uninstall')
-  .description('Remove all profiles and restore Claude Code to pre-CSP state')
+  .description('Uninstall csp CLI while keeping all profile data intact')
   .option('-f, --force', 'Skip confirmation prompt')
-  .option('--profile <name>', 'Restore specific profile instead of active one')
+  .option('--method <method>', 'Install method: npm | brew | standalone')
   .action(uninstallCommand);
 
 program.parse();

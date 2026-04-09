@@ -1,11 +1,10 @@
 import { existsSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { getActive, profileExists, getProfileDir, ensureDefaultProfileSnapshot } from '../profile-store.js';
-import { removeItems, restoreItems } from '../item-manager.js';
-import { removeFiles, restoreFiles } from '../file-operations.js';
-import { withLock, createBackup, warnIfClaudeRunning } from '../safety.js';
-import { PROFILES_DIR, DEFAULT_PROFILE } from '../constants.js';
-import { success, error, info, warn } from '../output-helpers.js';
+import { success, info, warn } from '../output-helpers.js';
+
+const METHODS = ['npm', 'brew', 'standalone'];
 
 const confirm = (question) => {
   return new Promise((resolve) => {
@@ -17,80 +16,70 @@ const confirm = (question) => {
   });
 };
 
-export const uninstallCommand = async (options) => {
-  const active = getActive();
+const normalizeMethod = (method) => {
+  const normalized = (method || '').toLowerCase();
+  if (!normalized) return null;
+  return METHODS.includes(normalized) ? normalized : null;
+};
 
-  if (!existsSync(PROFILES_DIR)) {
-    info('No profiles directory found. CSP is not initialized.');
-    info('To remove the CLI: npm uninstall -g claude-switch-profile');
+const printMethodHint = (method) => {
+  if (method === 'npm') {
+    info('Run this command to uninstall csp:');
+    info('  npm uninstall -g claude-switch-profile');
+    return;
+  }
+  if (method === 'brew') {
+    info('Run this command to uninstall csp:');
+    info('  brew uninstall claude-switch-profile');
     return;
   }
 
-  const restoreProfile = options.profile || active;
-  if (restoreProfile === DEFAULT_PROFILE) {
-    try {
-      ensureDefaultProfileSnapshot();
-    } catch (err) {
-      error(err.message);
-      process.exit(1);
-    }
+  info('Removed standalone install artifacts:');
+  info('  ~/.local/bin/csp');
+  info('  ~/.csp-cli');
+};
+
+const uninstallStandalone = () => {
+  const home = process.env.CSP_HOME || homedir();
+  const binDir = process.env.CSP_STANDALONE_BIN_DIR || join(home, '.local', 'bin');
+
+  rmSync(join(binDir, 'csp'), { force: true });
+  rmSync(join(home, '.csp-cli'), { recursive: true, force: true });
+};
+
+export const uninstallCommand = async (options) => {
+  const method = normalizeMethod(options.method);
+
+  if (!method) {
+    warn('Missing or invalid --method. Use one of: npm, brew, standalone');
+    return;
   }
 
-  // Show what will happen
   console.log('');
-  info('This will:');
-  if (options.profile && profileExists(options.profile)) {
-    info(`  1. Restore profile "${options.profile}" to ~/.claude`);
-  } else if (active && profileExists(active)) {
-    info(`  1. Restore active profile "${active}" to ~/.claude (use --profile <name> to choose)`);
-  } else {
-    warn('  1. No profile to restore (managed items will be removed)');
-  }
-  info(`  2. Remove all profiles: ${PROFILES_DIR}`);
-  info('  3. You can then run: npm uninstall -g claude-switch-profile');
+  info('This will uninstall csp CLI only.');
+  info('Profiles are kept at ~/.claude-profiles (no data is removed).');
+  info(`Method: ${method}`);
   console.log('');
 
   if (!options.force) {
-    const confirmed = await confirm('Uninstall CSP and remove all profiles? This cannot be undone. (y/N) ');
+    const confirmed = await confirm(`Proceed uninstall for method "${method}"? (y/N) `);
     if (!confirmed) {
       warn('Cancelled.');
       return;
     }
   }
 
-  warnIfClaudeRunning();
+  if (method === 'standalone') {
+    uninstallStandalone();
+    success('Standalone csp uninstall completed.');
+    printMethodHint(method);
+    return;
+  }
 
-  await withLock(async () => {
-    // 1. Create final backup before uninstall
-    try {
-      const backupPath = createBackup();
-      info(`Final backup created at ${backupPath}`);
-    } catch {
-      // Non-critical — profiles dir may be empty
-    }
+  if (!existsSync(join(process.env.CSP_HOME || homedir(), '.claude-profiles'))) {
+    info('No profiles directory found.');
+  }
 
-    // 2. Remove current managed items from ~/.claude
-    removeItems();
-    removeFiles();
-
-    // 3. Restore the chosen profile's config
-    if (restoreProfile && profileExists(restoreProfile)) {
-      const profileDir = getProfileDir(restoreProfile);
-      restoreItems(profileDir);
-      restoreFiles(profileDir);
-      success(`Restored "${restoreProfile}" profile to ~/.claude`);
-    } else {
-      warn('No profile restored. ~/.claude managed items have been cleared.');
-    }
-  });
-
-  // 5. Remove profiles directory (after lock is released)
-  rmSync(PROFILES_DIR, { recursive: true, force: true });
-  success('Removed all profiles and CSP data.');
-
-  console.log('');
-  info('To complete uninstall, run:');
-  info('  npm uninstall -g claude-switch-profile');
-  info('');
-  info('Restart your Claude Code session to apply changes.');
+  success('csp uninstall instructions are ready.');
+  printMethodHint(method);
 };
