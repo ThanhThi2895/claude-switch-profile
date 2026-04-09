@@ -419,36 +419,40 @@ csp exec hd -- claude-hd2
 
 ## uninstall
 
-Remove all profiles and restore Claude Code to its pre-CSP state.
+Uninstall the `csp` CLI while keeping all profiles intact.
 
 ```bash
-csp uninstall
+csp uninstall --method <npm|brew|standalone>
 ```
 
 **Options:**
 - `-f, --force` — Skip confirmation prompt
-- `--profile <name>` — Restore a specific profile instead of the active one
+- `--method <method>` — Install method: `npm`, `brew`, or `standalone`
 
 **Examples:**
 
 ```bash
-# Uninstall with confirmation
-csp uninstall
-# Uninstall CSP and remove all profiles? This cannot be undone. (y/N)
+# npm global install
+csp uninstall --method npm
+# then run:
+npm uninstall -g claude-switch-profile
 
-# Restore a specific profile during uninstall
-csp uninstall --profile production
+# Homebrew install
+csp uninstall --method brew
+# then run:
+brew uninstall claude-switch-profile
 
-# Force uninstall without prompt
-csp uninstall --force
+# Standalone install.sh
+csp uninstall --method standalone
+# Removes ~/.local/bin/csp and ~/.csp-cli directly
 ```
 
 **Behavior:**
-1. Creates a final backup at `~/.claude-profiles/.backup/`
-2. Restores the active profile by default, or the `--profile` choice, to `~/.claude`
-3. If `default` is restored, it uses the physical `default` snapshot like any other profile
-4. Removes `~/.claude-profiles/` entirely
-5. Prints reminder to run `npm uninstall -g claude-switch-profile`
+1. Validates uninstall method
+2. Shows confirmation (unless `--force`)
+3. Never removes `~/.claude-profiles/` (profiles are kept)
+4. For `standalone`: removes `~/.local/bin/csp` and `~/.csp-cli`
+5. For `npm`/`brew`: prints the exact command to run
 
 ---
 

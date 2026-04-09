@@ -63,7 +63,7 @@ const symlinkTarget = (path) => {
 };
 
 describe('CLI Integration', () => {
-  let tempDir, claudeDir, profilesDir, envOverrides;
+  let tempDir, claudeDir, profilesDir, envOverrides, fakeBinDir;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'csp-cli-'));
@@ -72,7 +72,7 @@ describe('CLI Integration', () => {
     mkdirSync(claudeDir, { recursive: true });
     mkdirSync(profilesDir, { recursive: true });
 
-    const fakeBinDir = join(tempDir, 'bin');
+    fakeBinDir = join(tempDir, 'bin');
     mkdirSync(fakeBinDir, { recursive: true });
 
     const fakeShellPath = join(tempDir, 'fake-shell');
@@ -554,36 +554,45 @@ describe('CLI Integration', () => {
     assert.ok(output.includes('Managed item sources (source.json): identical'));
   });
 
-  it('uninstall --profile default restores the default snapshot', () => {
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+  it('uninstall --method npm prints matching uninstall command and keeps profiles', () => {
     run('init', envOverrides);
 
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work profile');
-    run('create work -d "Work"', envOverrides);
-    run('use work --no-save', envOverrides);
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live');
-    run('save', envOverrides);
+    const output = run('uninstall --method npm --force', envOverrides);
 
-    run('uninstall --profile default --force', envOverrides);
-
-    assert.equal(existsSync(profilesDir), false);
-    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Default baseline');
+    assert.equal(existsSync(profilesDir), true);
+    assert.ok(output.includes('npm uninstall -g claude-switch-profile'));
+    assert.ok(output.includes('Profiles are kept'));
   });
 
-  it('uninstall restores the active non-default profile by default', () => {
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Default baseline');
+  it('uninstall --method brew prints matching uninstall command and keeps profiles', () => {
     run('init', envOverrides);
 
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work profile');
-    run('create work -d "Work"', envOverrides);
-    run('use work --no-save', envOverrides);
-    writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Work live');
-    run('save', envOverrides);
+    const output = run('uninstall --method brew --force', envOverrides);
 
-    run('uninstall --force', envOverrides);
+    assert.equal(existsSync(profilesDir), true);
+    assert.ok(output.includes('brew uninstall claude-switch-profile'));
+    assert.ok(output.includes('Profiles are kept'));
+  });
 
-    assert.equal(existsSync(profilesDir), false);
-    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Work live');
+  it('uninstall --method standalone removes local wrapper and install dir in test mode', () => {
+    run('init', envOverrides);
+
+    const installDir = join(tempDir, '.csp-cli');
+    const wrapperPath = join(fakeBinDir, 'csp');
+    mkdirSync(installDir, { recursive: true });
+    writeFileSync(wrapperPath, '#!/usr/bin/env sh\n');
+
+    const output = run('uninstall --method standalone --force', {
+      ...envOverrides,
+      CSP_HOME: tempDir,
+      CSP_STANDALONE_BIN_DIR: fakeBinDir,
+    });
+
+    assert.equal(existsSync(profilesDir), true);
+    assert.equal(existsSync(installDir), false);
+    assert.equal(existsSync(wrapperPath), false);
+    assert.ok(output.includes('Removed standalone install artifacts'));
+    assert.ok(output.includes('Profiles are kept'));
   });
 
   it('launch default keeps default profile mode as legacy', () => {

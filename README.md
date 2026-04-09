@@ -51,6 +51,32 @@ brew install claude-switch-profile
 npm install -g claude-switch-profile
 ```
 
+## Uninstall
+
+`csp uninstall` only removes the **CLI tool**. It does **not** delete any profile data.
+
+- Profiles stay at `~/.claude-profiles/`
+- Your `~/.claude` config is not mutated by this command
+
+Choose uninstall method that matches how you installed CSP:
+
+```bash
+# npm global install
+csp uninstall --method npm
+# then run:
+npm uninstall -g claude-switch-profile
+
+# Homebrew install
+csp uninstall --method brew
+# then run:
+brew uninstall claude-switch-profile
+
+# Standalone install.sh
+csp uninstall --method standalone
+# this removes ~/.local/bin/csp and ~/.csp-cli directly
+```
+
+Use `--force` to skip confirmation.
 
 ## Quick Start
 
@@ -90,7 +116,7 @@ csp
 | `csp import <file>` | Import profile from archive |
 | `csp delete <name>` | Delete a profile |
 | `csp deactivate` | Switch back to `default` profile |
-| `csp uninstall` | Remove CSP and restore Claude to pre-CSP state |
+| `csp uninstall --method <npm\|brew\|standalone>` | Uninstall csp CLI and keep all profiles |
 
 > 📖 **Full command reference with all options and detailed behavior:** [docs/commands-reference.md](docs/commands-reference.md)
 
