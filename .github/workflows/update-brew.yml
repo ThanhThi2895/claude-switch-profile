@@ -1,4 +1,4 @@
-name: Update Homebrew Tap
+name: Update Homebrew Formula
 
 on:
   release:
@@ -12,7 +12,12 @@ on:
 jobs:
   bump-formula:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Cho phép GITHUB_TOKEN mặc định được ghi dữ liệu vào repo này
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Resolve Version
         id: version
         run: |
@@ -20,7 +25,7 @@ jobs:
             VERSION="${{ github.event.inputs.version }}"
           else
             VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}" # Strip 'v' prefix if present
+            VERSION="${VERSION#v}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Tarball version target: $VERSION"
@@ -31,7 +36,6 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           TARBALL_URL="https://registry.npmjs.org/claude-switch-profile/-/claude-switch-profile-${VERSION}.tgz"
           
-          # NPM registry might need a few seconds to propagate after an automated release
           echo "Waiting 15 seconds to ensure NPM registry propagation..."
           sleep 15
           
@@ -47,22 +51,10 @@ jobs:
 
           echo "url=$TARBALL_URL" >> $GITHUB_OUTPUT
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-          echo "SHA256: $SHA256"
-
-      - name: Checkout Homebrew Tap Repository
-        uses: actions/checkout@v4
-        with:
-          # Thư mục đích mà người dùng sẽ lập ra để chứa Formula
-          repository: ThanhThi2895/homebrew-tap
-          # Token này phải tạo ra từ Settings -> Developer Settings -> Personal Access Tokens
-          token: ${{ secrets.TAP_GITHUB_TOKEN }}
-          path: homebrew-tap
 
       - name: Generate New Formula
         run: |
-          mkdir -p homebrew-tap/Formula
-          
-          cat << 'EOF' > homebrew-tap/Formula/claude-switch-profile.rb
+          cat << 'EOF' > Formula/claude-switch-profile.rb
           require "language/node"
 
           class ClaudeSwitchProfile < Formula
@@ -85,18 +77,16 @@ jobs:
           end
           EOF
 
-      - name: Commit and Push to Tap
+      - name: Commit and Push to Same Repo
         run: |
-          cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/claude-switch-profile.rb
           
-          # Only commit if there are changes
           if git diff --staged --quiet; then
             echo "No formula changes detected."
           else
-            git commit -m "Bump claude-switch-profile to v${{ steps.version.outputs.version }}"
+            git commit -m "Bump Homebrew formula to v${{ steps.version.outputs.version }}"
             git push
-            echo "Successfully updated Homebrew tap!"
+            echo "Successfully updated local Homebrew formula!"
           fi

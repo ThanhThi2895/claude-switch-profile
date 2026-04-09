@@ -39,10 +39,9 @@ curl -fsSL https://raw.githubusercontent.com/ThanhThi2895/claude-switch-profile/
 Leverages Homebrew's own managed cellars to isolate the Node engine:
 
 ```bash
-brew tap ThanhThi2895/homebrew-tap
+brew tap ThanhThi2895/claude-switch-profile
 brew install claude-switch-profile
 ```
-*(Note: Requires the tap to be published to GitHub)*
 
 ### Option 3: Global NPM (Legacy Fallback)
 
