@@ -1,0 +1,102 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 1.4.17)'
+        required: true
+
+jobs:
+  bump-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}" # Strip 'v' prefix if present
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Tarball version target: $VERSION"
+
+      - name: Fetch NPM Package Info
+        id: fetch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_URL="https://registry.npmjs.org/claude-switch-profile/-/claude-switch-profile-${VERSION}.tgz"
+          
+          # NPM registry might need a few seconds to propagate after an automated release
+          echo "Waiting 15 seconds to ensure NPM registry propagation..."
+          sleep 15
+          
+          echo "Downloading tarball to calculate SHA256..."
+          curl -sL $TARBALL_URL -o package.tgz
+          
+          SHA256=$(shasum -a 256 package.tgz | awk '{print $1}')
+          
+          if [ -z "$SHA256" ]; then
+            echo "Failed to calculate SHA256. Tarball might not exist yet."
+            exit 1
+          fi
+
+          echo "url=$TARBALL_URL" >> $GITHUB_OUTPUT
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+
+      - name: Checkout Homebrew Tap Repository
+        uses: actions/checkout@v4
+        with:
+          # Thư mục đích mà người dùng sẽ lập ra để chứa Formula
+          repository: ThanhThi2895/homebrew-tap
+          # Token này phải tạo ra từ Settings -> Developer Settings -> Personal Access Tokens
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Generate New Formula
+        run: |
+          mkdir -p homebrew-tap/Formula
+          
+          cat << 'EOF' > homebrew-tap/Formula/claude-switch-profile.rb
+          require "language/node"
+
+          class ClaudeSwitchProfile < Formula
+            desc "CLI tool for managing multiple Claude Code profiles"
+            homepage "https://github.com/ThanhThi2895/claude-switch-profile"
+            url "${{ steps.fetch.outputs.url }}"
+            sha256 "${{ steps.fetch.outputs.sha256 }}"
+            license "MIT"
+
+            depends_on "node"
+
+            def install
+              system "npm", "install", *Language::Node.std_npm_install_args(libexec)
+              bin.install_symlink Dir["#{libexec}/bin/*"]
+            end
+
+            test do
+              assert_match "Usage: csp", shell_output("#{bin}/csp --help")
+            end
+          end
+          EOF
+
+      - name: Commit and Push to Tap
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/claude-switch-profile.rb
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No formula changes detected."
+          else
+            git commit -m "Bump claude-switch-profile to v${{ steps.version.outputs.version }}"
+            git push
+            echo "Successfully updated Homebrew tap!"
+          fi
