@@ -39,7 +39,15 @@ curl -fsSL https://raw.githubusercontent.com/ThanhThi2895/claude-switch-profile/
 Leverages Homebrew's own managed cellars to isolate the Node engine:
 
 ```bash
-brew tap ThanhThi2895/claude-switch-profile
+brew tap ThanhThi2895/claude-switch-profile https://github.com/ThanhThi2895/claude-switch-profile
+brew install claude-switch-profile
+```
+
+If you previously hit a tap resolution error, reset then tap again:
+
+```bash
+brew untap ThanhThi2895/claude-switch-profile 2>/dev/null || true
+brew tap ThanhThi2895/claude-switch-profile https://github.com/ThanhThi2895/claude-switch-profile
 brew install claude-switch-profile
 ```
 
