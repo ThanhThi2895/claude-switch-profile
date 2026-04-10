@@ -22,7 +22,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 ├──────────────────────────────────────────────────────────────┤
 │  profile-store.js     │  Metadata + schema normalization       │
 │  runtime-instance-manager.js │ Isolated runtime prep/sync      │
-│  item-manager.js      │  Managed item copy/move                │
+│  item-manager.js      │  Managed item copy/restore                │
 │  file-operations.js   │  File/directory copy/restore           │
 │  launch-effective-env-resolver.js │ ANTHROPIC_* env resolution  │
 │  profile-validator.js │  Structure validation                  │
@@ -291,8 +291,6 @@ copyItems(profileDir)  // Copy managed items from ~/.claude to profileDir + sour
 saveItems(profileDir)  // Alias of copyItems
 restoreItems(profileDir) // Restore managed items from source map into ~/.claude
 removeItems()          // Remove managed items from ~/.claude
-moveItemsToProfile(profileDir) // Move managed items ~/.claude -> profile
-moveItemsToClaude(profileDir)  // Move managed items profile -> ~/.claude
 ```
 
 ---

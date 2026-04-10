@@ -19,7 +19,7 @@ export const RUNTIMES_DIR = join(PROFILES_DIR, RUNTIME_DIR_NAME);
 export const LAUNCH_CONFIG_ENV = 'CLAUDE_CONFIG_DIR';
 export const LAUNCH_ANTHROPIC_ENV_KEYS = ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'];
 
-// Items managed by snapshot/move flows; file/dir/symlink shape is preserved
+// Items managed by snapshot/copy flows; file/dir/symlink shape is preserved
 export const MANAGED_ITEMS = [
   'CLAUDE.md',
   'rules',

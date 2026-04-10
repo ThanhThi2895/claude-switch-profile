@@ -19,7 +19,7 @@ src/commands/                       → init, current, list, create, save, use, 
 src/constants.js                    → Paths + managed item lists + runtime constants
 src/profile-store.js                → profiles.json v2 normalization + active marker + runtime metadata
 src/runtime-instance-manager.js     → Runtime sync/seed for isolated launch
-src/item-manager.js                 → Managed item copy/move/read/remove
+src/item-manager.js                 → Managed item copy/restore/read/remove
 src/file-operations.js              → COPY_ITEMS/COPY_DIRS save/restore/remove + settings path rewriting
 src/launch-effective-env-resolver.js → ANTHROPIC_* env precedence resolution + session env stripping
 src/safety.js                       → Global lock + per-profile runtime lock + backup pruning (max 2)

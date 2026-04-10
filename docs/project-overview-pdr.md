@@ -124,7 +124,7 @@ Enable developers to:
 | `src/commands/*.js` | Individual command implementations |
 | `profile-store.js` | Profile metadata read/write (profiles.json, .active) |
 | `runtime-instance-manager.js` | Runtime isolation and syncing for launch |
-| `item-manager.js` | Managed item copy/move operations |
+| `item-manager.js` | Managed item copy/restore operations |
 | `launch-effective-env-resolver.js` | Environment variable resolution for launch |
 | `file-operations.js` | File and directory copy/restore |
 | `safety.js` | Locking, backups, process detection, validation |
@@ -261,7 +261,7 @@ Remind user to restart Claude Code
 ### Functional
 - [x] All 16 commands implemented and working
 - [x] Profiles correctly capture/restore state
-- [x] Managed items properly handled (copy/move)
+- [x] Managed items properly handled (copy/restore)
 - [x] Files copied/restored correctly
 - [x] Metadata persisted accurately
 - [x] Export/import works end-to-end
