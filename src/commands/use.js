@@ -7,15 +7,8 @@ import {
   setPrevious,
   ensureDefaultProfileSnapshot,
 } from '../profile-store.js';
-import { moveItemsToProfile, moveItemsToClaude, removeItems } from '../item-manager.js';
-import {
-  saveFiles,
-  removeFiles,
-  restoreFiles,
-  updateSettingsPaths,
-  moveDirsToProfile,
-  moveDirsToClaude,
-} from '../file-operations.js';
+import { copyItems, restoreItems, removeItems } from '../item-manager.js';
+import { saveFiles, removeFiles, restoreFiles, updateSettingsPaths } from '../file-operations.js';
 import { validateProfile } from '../profile-validator.js';
 import { withLock, assertClaudeNotRunning } from '../safety.js';
 import { success, error, info, warn } from '../output-helpers.js';
@@ -94,9 +87,8 @@ export const useCommand = async (name, options = {}) => {
   await withLock(async () => {
     if (active && profileExists(active) && options.save !== false) {
       const activeDir = getProfileDir(active);
-      moveItemsToProfile(activeDir);
+      copyItems(activeDir);
       saveFiles(activeDir);
-      moveDirsToProfile(activeDir);
       updateSettingsPaths(activeDir, 'save');
       info(`Saved current state to "${active}"`);
     }
@@ -105,9 +97,8 @@ export const useCommand = async (name, options = {}) => {
     removeFiles();
 
     try {
-      moveItemsToClaude(profileDir);
+      restoreItems(profileDir);
       restoreFiles(profileDir);
-      moveDirsToClaude(profileDir);
       updateSettingsPaths(CLAUDE_DIR, 'restore', profileDir);
     } catch (err) {
       warn(`Switch failed: ${err.message}`);

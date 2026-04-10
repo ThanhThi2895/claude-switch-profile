@@ -109,6 +109,7 @@ csp
 | Command | Description |
 |---|---|
 | `csp` / `csp select` | Interactive profile selector (default) |
+| `csp -v` / `csp --version` | Print the current CSP version |
 | `csp init` | Initialize and capture current state as `default` profile |
 | `csp create <name>` | Create a new profile (`--from`, `--source`, `-d` options) |
 | `csp launch <name>` | Launch isolated Claude session for a profile |
@@ -124,8 +125,13 @@ csp
 | `csp import <file>` | Import profile from archive |
 | `csp delete <name>` | Delete a profile |
 | `csp deactivate` | Switch back to `default` profile |
+| `csp update [--method <npm\|brew\|standalone>]` | Update CSP (auto-detect install method by default) |
 | `csp uninstall --method <npm\|brew\|standalone>` | Uninstall csp CLI and keep all profiles |
 
+> `csp -v` is a short alias for `csp --version` and prints the same semver.
+>
+> `csp update` auto-detects install method (npm/brew/standalone). Use `--method` to override explicitly.
+>
 > 📖 **Full command reference with all options and detailed behavior:** [docs/commands-reference.md](docs/commands-reference.md)
 
 ## Two Launch Modes
@@ -151,6 +157,8 @@ csp use work
 ```
 
 - Mutates `~/.claude` directly
+- Saves current active profile snapshot by copy (unless `--no-save`)
+- Restores target profile snapshot into `~/.claude` by copy (profile snapshot is not consumed)
 - Updates `.active` marker
 - Requires Claude restart
 

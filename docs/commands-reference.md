@@ -2,6 +2,21 @@
 
 Complete reference for all `csp` commands.
 
+## version
+
+Print the installed CSP version.
+
+```bash
+csp -v
+csp --version
+```
+
+**Behavior:**
+- `-v` and `--version` print the same semver string
+- Prints the version and exits without running any subcommand
+
+---
+
 ## select (default)
 
 Open interactive profile selector (default behavior when you run `csp` without subcommand).
@@ -165,9 +180,9 @@ csp use backup --no-save
 **Behavior:**
 1. Validates target profile exists and profile structure is valid
 2. Refuses to switch while Claude Code is running (legacy/global switching mutates `~/.claude` directly)
-3. If the active profile exists and `--no-save` is not set: saves its current snapshot first
+3. If the active profile exists and `--no-save` is not set: copies its current snapshot into the active profile directory first
 4. Removes managed items/files from `~/.claude`
-5. Restores the target profile snapshot into `~/.claude` — including `default`
+5. Restores the target profile snapshot into `~/.claude` by copy — including `default` (the source profile snapshot is kept intact)
 6. Updates active marker
 7. On older installs missing `profiles/default`, CSP only backfills that snapshot when the active profile is `default` or no active profile is set; otherwise it fails closed with repair guidance
 8. **Important:** Claude Code session must be restarted for changes to apply
@@ -414,6 +429,49 @@ csp exec hd -- claude-hd2
 7. Reasserts `CLAUDE_CONFIG_DIR` and allowlisted `ANTHROPIC_*` after shell init so profile isolation wins over shell startup overrides
 8. Inherits stdin/stdout/stderr and forwards child exit code
 9. Keeps `.active` unchanged and never mutates global `~/.claude`
+
+---
+
+## update
+
+Update the installed `csp` CLI. By default, CSP auto-detects install method from runtime path and runs the matching update flow.
+
+```bash
+csp update
+csp update --method <npm|brew|standalone>
+```
+
+**Options:**
+- `-f, --force` — Skip confirmation prompt
+- `--method <method>` — Override update method: `npm`, `brew`, or `standalone`
+
+**Examples:**
+
+```bash
+# Auto-detect method (recommended)
+csp update --force
+
+# Force npm update
+csp update --method npm --force
+# Runs:
+npm install -g claude-switch-profile@latest
+
+# Force Homebrew update
+csp update --method brew --force
+# Runs:
+brew upgrade claude-switch-profile
+
+# Force standalone update
+csp update --method standalone
+# Uses local install.sh when available, else remote install pipeline
+```
+
+**Behavior:**
+1. Auto-detects install method when `--method` is omitted (`standalone` > `brew` > `npm` fallback)
+2. Validates `--method` only when provided explicitly
+3. Shows confirmation unless `--force` is used
+4. Executes the matching update flow for detected/selected install method
+5. Exits non-zero if the update command fails
 
 ---
 

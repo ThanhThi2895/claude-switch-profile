@@ -33,7 +33,7 @@ claude-switch-profile/
 │   ├── constants.js                    # Configuration & paths
 │   ├── profile-store.js                # Metadata management
 │   ├── runtime-instance-manager.js     # Runtime isolation
-│   ├── item-manager.js                 # Item copy/move operations
+│   ├── item-manager.js                 # Item copy/restore operations
 │   ├── launch-effective-env-resolver.js # Env variable resolution
 │   ├── file-operations.js              # File/dir copy/restore
 │   ├── profile-validator.js            # Validation logic

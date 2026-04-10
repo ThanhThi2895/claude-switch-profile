@@ -81,7 +81,7 @@ export const createCommand = (name, options) => {
     }
 
     // MANAGED_FILES → empty file stubs (CLAUDE.md, statusline.*, .luna.json)
-    // These must exist so moveItemsToClaude can overwrite the old profile's copies
+    // These must exist so restoreItems can copy profile snapshots into ~/.claude
     const managedFiles = MANAGED_ITEMS.filter((item) => !MANAGED_DIRS.includes(item));
     for (const item of managedFiles) {
       const dest = join(profileDir, item);
@@ -90,7 +90,7 @@ export const createCommand = (name, options) => {
     }
 
     // COPY_DIRS → empty directories (commands, plugins, workflows, scripts, …)
-    // These must exist so moveDirsToClaude can overwrite the old profile's dirs
+    // These must exist so restoreFiles can copy profile directories into ~/.claude
     for (const dir of COPY_DIRS) {
       mkdirSync(join(profileDir, dir), { recursive: true });
     }

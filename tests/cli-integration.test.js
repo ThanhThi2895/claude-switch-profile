@@ -30,6 +30,26 @@ const run = (args, env = {}) => {
   }
 };
 
+const runResult = (args, env = {}) => {
+  try {
+    return {
+      status: 0,
+      stdout: execSync(`node "${BIN}" ${args}`, {
+        encoding: 'utf-8',
+        env: { ...process.env, ...env },
+        timeout: 10000,
+      }).trim(),
+      stderr: '',
+    };
+  } catch (err) {
+    return {
+      status: err.status ?? 1,
+      stdout: (err.stdout || '').trim(),
+      stderr: (err.stderr || '').trim(),
+    };
+  }
+};
+
 const readCapturedEnv = (captureFile) => {
   const lines = readFileSync(captureFile, 'utf-8').split(/\r?\n/).filter(Boolean);
   const parsed = {};
@@ -116,6 +136,13 @@ describe('CLI Integration', () => {
   it('shows version', () => {
     const output = run('--version', envOverrides);
     assert.match(output, /\d+\.\d+\.\d+/);
+  });
+
+  it('shows version with -v', () => {
+    const result = runResult('-v', envOverrides);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /\d+\.\d+\.\d+/);
+    assert.equal(result.stderr, '');
   });
 
   it('shows help', () => {
@@ -554,6 +581,47 @@ describe('CLI Integration', () => {
     assert.ok(output.includes('Managed item sources (source.json): identical'));
   });
 
+  it('update --method npm --force prints matching update command', () => {
+    const result = runResult('update --method npm --force', envOverrides);
+
+    assert.equal(result.status, 0);
+    assert.ok(result.stdout.includes('npm install -g claude-switch-profile@latest'));
+    assert.equal(result.stderr, '');
+  });
+
+  it('update --method brew --force prints matching update command', () => {
+    const result = runResult('update --method brew --force', envOverrides);
+
+    assert.equal(result.status, 0);
+    assert.ok(result.stdout.includes('brew upgrade claude-switch-profile'));
+    assert.equal(result.stderr, '');
+  });
+
+  it('update --method standalone --force reruns local install script', () => {
+    const result = runResult('update --method standalone --force', envOverrides);
+
+    assert.equal(result.status, 0);
+    assert.ok(result.stdout.includes('Standalone update (dry run in test mode):'));
+    assert.ok(result.stdout.includes('bash '));
+    assert.equal(result.stderr, '');
+  });
+
+  it('update auto-detects npm when running from repo path', () => {
+    const result = runResult('update --force', envOverrides);
+
+    assert.equal(result.status, 0);
+    assert.ok(result.stdout.includes('Method: npm (auto-detected; override with --method)'));
+    assert.ok(result.stdout.includes('npm update (dry run in test mode):'));
+    assert.ok(result.stdout.includes('npm install -g claude-switch-profile@latest'));
+    assert.equal(result.stderr, '');
+  });
+
+  it('update requires a valid --method when provided', () => {
+    const invalidMethod = runResult('update --method invalid --force', envOverrides);
+    assert.notEqual(invalidMethod.status, 0);
+    assert.match(`${invalidMethod.stdout}\n${invalidMethod.stderr}`, /invalid|method|option/i);
+  });
+
   it('uninstall --method npm prints matching uninstall command and keeps profiles', () => {
     run('init', envOverrides);
 
@@ -610,9 +678,9 @@ describe('CLI Integration', () => {
     assert.ok(output.includes('Cannot delete'));
   });
 
-  // ─── Move Semantics (use command) ───
+  // ─── Copy Semantics (use command) ───
 
-  it('use moves items between profiles via rename', () => {
+  it('use copies items from target profile without consuming snapshot', () => {
     run('init', envOverrides);
 
     // Create two profiles with different content
@@ -624,6 +692,8 @@ describe('CLI Integration', () => {
       join(profilesDir, 'alpha', 'source.json'),
       JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'alpha', 'CLAUDE.md') }, null, 2),
     );
+    mkdirSync(join(profilesDir, 'alpha', 'commands'), { recursive: true });
+    writeFileSync(join(profilesDir, 'alpha', 'commands', 'alpha-command.sh'), 'echo alpha');
 
     writeFileSync(join(claudeDir, 'CLAUDE.md'), '# Beta');
     run('create beta --from default -d "Beta"', envOverrides);
@@ -634,12 +704,16 @@ describe('CLI Integration', () => {
       JSON.stringify({ 'CLAUDE.md': join(profilesDir, 'beta', 'CLAUDE.md') }, null, 2),
     );
 
-    // Switch from beta to alpha — should move items
+    // Switch from beta to alpha — should copy items
     run('use alpha', envOverrides);
 
     // Alpha's content should be in ~/.claude
-    const content = readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8');
-    assert.equal(content, '# Alpha');
+    assert.equal(readFileSync(join(claudeDir, 'CLAUDE.md'), 'utf-8'), '# Alpha');
+
+    // Target profile snapshot must remain intact after switch
+    assert.equal(readFileSync(join(profilesDir, 'alpha', 'CLAUDE.md'), 'utf-8'), '# Alpha');
+    assert.equal(readFileSync(join(claudeDir, 'commands', 'alpha-command.sh'), 'utf-8'), 'echo alpha');
+    assert.equal(readFileSync(join(profilesDir, 'alpha', 'commands', 'alpha-command.sh'), 'utf-8'), 'echo alpha');
   });
 
   it('switch between non-default profiles preserves state', () => {

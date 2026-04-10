@@ -16,6 +16,7 @@ import { importCommand } from '../src/commands/import.js';
 import { diffCommand } from '../src/commands/diff.js';
 import { initCommand } from '../src/commands/init.js';
 import { uninstallCommand } from '../src/commands/uninstall.js';
+import { updateCommand } from '../src/commands/update.js';
 import { launchCommand, execCommand } from '../src/commands/launch.js';
 import { deactivateCommand } from '../src/commands/deactivate.js';
 import { toggleCommand } from '../src/commands/toggle.js';
@@ -30,7 +31,7 @@ const program = new Command();
 program
   .name('csp')
   .description('Claude Switch Profile — manage multiple Claude Code configurations')
-  .version(pkg.version)
+  .version(pkg.version, '-v, --version')
   .enablePositionalOptions();
 
 program
@@ -156,5 +157,12 @@ program
   .option('-f, --force', 'Skip confirmation prompt')
   .option('--method <method>', 'Install method: npm | brew | standalone')
   .action(uninstallCommand);
+
+program
+  .command('update')
+  .description('Update csp CLI while keeping all profile data intact')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .option('--method <method>', 'Install method: npm | brew | standalone')
+  .action(updateCommand);
 
 program.parse();
