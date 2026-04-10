@@ -157,7 +157,7 @@ csp save
 Switch to a different profile.
 
 ```bash
-csp use <name> [options]
+csp use [name] [options]
 ```
 
 **Options:**
@@ -167,8 +167,11 @@ csp use <name> [options]
 **Examples:**
 
 ```bash
-# Simple switch
+# Switch explicitly
 csp use production
+
+# Switch to default implicitly
+csp use
 
 # Preview changes first
 csp use staging --dry-run
@@ -180,12 +183,13 @@ csp use backup --no-save
 **Behavior:**
 1. Validates target profile exists and profile structure is valid
 2. Refuses to switch while Claude Code is running (legacy/global switching mutates `~/.claude` directly)
-3. If the active profile exists and `--no-save` is not set: copies its current snapshot into the active profile directory first
-4. Removes managed items/files from `~/.claude`
-5. Restores the target profile snapshot into `~/.claude` by copy — including `default` (the source profile snapshot is kept intact)
-6. Updates active marker
-7. On older installs missing `profiles/default`, CSP only backfills that snapshot when the active profile is `default` or no active profile is set; otherwise it fails closed with repair guidance
-8. **Important:** Claude Code session must be restarted for changes to apply
+3. If no name is provided, switches to `default`
+4. If the active profile exists and `--no-save` is not set: copies its current snapshot into the active profile directory first
+5. Removes managed items/files from `~/.claude`
+6. Restores the target profile snapshot into `~/.claude` by copy — including `default` (the source profile snapshot is kept intact)
+7. Updates active marker
+8. On older installs missing `profiles/default`, CSP only backfills that snapshot when the active profile is `default` or no active profile is set; otherwise it fails closed with repair guidance
+9. **Important:** Claude Code session must be restarted for changes to apply
 
 ---
 
@@ -348,7 +352,7 @@ csp deactivate
 1. Exits early if no active profile or active profile is `default`
 2. Delegates to `csp use default`
 3. Optionally saves the current non-default profile state
-4. Restores the physical `default` snapshot into `~/.claude`
+4. Restores the physical `default` snapshot into `~/.claude` by copy
 5. Marks `default` as the active legacy profile
 
 ---
@@ -481,6 +485,7 @@ Uninstall the `csp` CLI while keeping all profiles intact.
 
 ```bash
 csp uninstall --method <npm|brew|standalone>
+csp uninstall --method <npm|brew|standalone> --force
 ```
 
 **Options:**
@@ -509,8 +514,9 @@ csp uninstall --method standalone
 1. Validates uninstall method
 2. Shows confirmation (unless `--force`)
 3. Never removes `~/.claude-profiles/` (profiles are kept)
-4. For `standalone`: removes `~/.local/bin/csp` and `~/.csp-cli`
-5. For `npm`/`brew`: prints the exact command to run
+4. Does not wipe profile data and does not restore or rewrite `~/.claude`
+5. For `standalone`: removes `~/.local/bin/csp` and `~/.csp-cli`
+6. For `npm`/`brew`: prints the exact command to run
 
 ---
 

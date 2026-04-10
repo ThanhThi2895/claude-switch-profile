@@ -24,15 +24,17 @@ Enable developers to:
 - **Create**: Create new profiles from current state or clone existing profiles
 - **List**: Show all profiles with descriptions and creation dates
 - **Current**: Display the active legacy profile name and location
-- **Use**: Switch to a different profile with auto-save and validation
+- **Use**: Switch to a different profile with auto-save and validation; accepts `use [name]` and defaults to `default`
 - **Save**: Manually save the active profile snapshot
 - **Delete**: Remove a profile (with confirmation)
 - **Deactivate**: Switch an active non-default legacy profile back to the physical `default` snapshot
 - **Launch**: Launch isolated Claude Code session per profile while preserving profile metadata semantics
-- **Uninstall**: Remove CSP and restore the active or selected profile snapshot to `~/.claude` before wiping all data
+- **Uninstall**: Remove only the CSP CLI installation while keeping all profiles; does not wipe profile data or rewrite `~/.claude`
 - **Select**: Interactive arrow-key profile picker (default command when no subcommand given)
 - **Status**: Show CSP status dashboard (active profile, profile count, last launch, Claude state)
 - **Toggle**: Switch to the previous profile and launch it
+- **Exec**: Run arbitrary commands inside an isolated profile runtime without mutating global `~/.claude`
+- **Update**: Update the installed CSP CLI using auto-detected or explicit install method
 
 #### 2. Profile Sharing
 - **Export**: Package profile as tar.gz archive
@@ -120,7 +122,7 @@ Enable developers to:
 
 | Module | Responsibility |
 |---|---|
-| `bin/csp.js` | CLI entry point; command routing (16 commands) |
+| `bin/csp.js` | CLI entry point; command routing (18 commands) |
 | `src/commands/*.js` | Individual command implementations |
 | `profile-store.js` | Profile metadata read/write (profiles.json, .active) |
 | `runtime-instance-manager.js` | Runtime isolation and syncing for launch |
@@ -136,7 +138,7 @@ Enable developers to:
 ### Profile Switching Flow
 
 ```
-User runs: csp use <profile>
+User runs: csp use [profile]
     ↓
 CLI validates profile exists & structure valid
     ↓
@@ -159,7 +161,7 @@ Save active profile snapshot:
     ↓
 Remove all managed items from ~/.claude
     ↓
-Restore target profile snapshot:
+Restore target profile snapshot by copy:
   - Read source.json
   - Restore managed items in ~/.claude
   - Copy files/directories from profile to ~/.claude
@@ -235,12 +237,12 @@ Remind user to restart Claude Code
 
 ### Phase 2: Core Library
 - Implement profile-store.js (metadata management)
-- Implement symlink-manager.js (symlink operations)
+- Implement item-manager.js (managed item save/restore operations)
 - Implement file-operations.js (copy/restore)
 - Implement profile-validator.js (validation logic)
 
 ### Phase 3: CLI Commands
-- Implement all 16 commands (init, current, list, create, save, use, delete, export, import, diff, deactivate, launch, uninstall, select, status, toggle)
+- Implement all 18 commands (select, init, current, list, status, create, save, use, toggle, delete, export, import, diff, deactivate, launch, exec, uninstall, update)
 - Wire commands into CLI framework
 - Implement error handling and messaging
 
@@ -259,7 +261,7 @@ Remind user to restart Claude Code
 ## Success Criteria
 
 ### Functional
-- [x] All 16 commands implemented and working
+- [x] All 18 commands implemented and working
 - [x] Profiles correctly capture/restore state
 - [x] Managed items properly handled (copy/restore)
 - [x] Files copied/restored correctly
@@ -379,6 +381,6 @@ Remind user to restart Claude Code
 
 ---
 
-**Last Updated:** 2026-03-31
+**Last Updated:** 2026-04-10
 **Version:** 1.4.0
 **Status:** Complete

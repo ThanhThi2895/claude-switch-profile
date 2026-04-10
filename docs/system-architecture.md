@@ -14,7 +14,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
                      │
 ┌────────────────────┴────────────────────────────────────────┐
 │                   Commands Layer (src/commands/)             │
-│  init  current  list  create  save  use  delete  export  import  diff  deactivate  launch  uninstall  select  status  toggle
+│  select  init  current  list  status  create  save  use  toggle  delete  export  import  diff  deactivate  launch  exec  uninstall  update
 └────────────────────┬────────────────────────────────────────┘
                      │
 ┌────────────────────┴────────────────────────────────────────┐
@@ -50,7 +50,7 @@ Claude Switch Profile is a lightweight Node.js CLI application that manages mult
 **Responsibilities:**
 - Load package.json for version
 - Create Commander.js program
-- Register all 17 commands with their options
+- Register all 18 commands with their options
 - Parse command line arguments
 - Invoke appropriate command handler
 
@@ -63,7 +63,7 @@ program.command('current')      // Show active
 program.command('list')         // List profiles
 program.command('create')       // Create new profile
 program.command('save')         // Save current state
-program.command('use')          // Switch profile
+program.command('use [name]')   // Switch profile (defaults to default)
 program.command('delete')       // Delete profile
 program.command('export')       // Export to archive
 program.command('import')       // Import from archive
@@ -71,10 +71,11 @@ program.command('diff')         // Compare profiles
 program.command('deactivate')   // Deactivate active profile
 program.command('launch')       // Isolated launch (default) or legacy-global
 program.command('exec')         // Run arbitrary command in isolated runtime env
-program.command('uninstall')    // Remove CSP completely
+program.command('uninstall')    // Remove only the CSP CLI
 program.command('select')       // Interactive profile picker (default command)
 program.command('status')       // CSP status dashboard
 program.command('toggle')       // Switch to previous profile
+program.command('update')       // Update installed CSP CLI
 ```
 
 ---
@@ -121,18 +122,19 @@ Each command file exports a single async function matching the command name.
 
 #### use.js
 **Flow (most complex)**
-1. Validate target profile exists
-2. If target or active profile is `default`, ensure its physical snapshot exists
-3. Validate profile structure
-4. If `--dry-run`: show changes and exit
-5. If not active: call withLock() to:
-   - Save current active profile snapshot
+1. Resolve omitted name to `default`
+2. Validate target profile exists
+3. If target or active profile is `default`, ensure its physical snapshot exists
+4. Validate profile structure
+5. If `--dry-run`: show changes and exit
+6. If not active: call withLock() to:
+   - Save current active profile snapshot by copy
    - Remove managed items/files from `~/.claude`
-   - Restore target profile snapshot, including `default`
+   - Restore target profile snapshot by copy, including `default`
    - Update `.active` marker
-6. On older installs missing `profiles/default`, only backfill when active is `default` or no active profile is set; otherwise fail closed
-7. Warn if Claude is running
-8. Display success message
+7. On older installs missing `profiles/default`, only backfill when active is `default` or no active profile is set; otherwise fail closed
+8. Refuse to continue while Claude is running
+9. Display success message
 
 #### delete.js
 **Flow:**
@@ -189,8 +191,9 @@ Each command file exports a single async function matching the command name.
 1. Validate `--method` (`npm`, `brew`, `standalone`)
 2. Show summary and confirmation prompt (unless `--force`)
 3. Keep `~/.claude-profiles/` unchanged (no profile deletion)
-4. For `standalone`, remove `~/.local/bin/csp` and `~/.csp-cli`
-5. For `npm`/`brew`, print exact uninstall command to run
+4. Do not restore or rewrite `~/.claude`
+5. For `standalone`, remove `~/.local/bin/csp` and `~/.csp-cli`
+6. For `npm`/`brew`, print exact uninstall command to run
 
 #### select.js (default command)
 **Flow:**
@@ -199,6 +202,17 @@ Each command file exports a single async function matching the command name.
 3. Highlight active profile in green, selected cursor in cyan
 4. On Enter: delegate to `launchCommand()` for chosen profile
 5. On Esc/Ctrl+C: cancel and exit
+
+#### update.js
+**Flow:**
+1. Auto-detect install method unless `--method` is provided explicitly
+2. Validate explicit `--method` against `npm`, `brew`, `standalone`
+3. Show summary and confirmation prompt (unless `--force`)
+4. Run matching update flow:
+   - `npm` → `npm install -g claude-switch-profile@latest`
+   - `brew` → `brew upgrade claude-switch-profile`
+   - `standalone` → local `install.sh` or remote installer pipeline
+5. Preserve all profile data in `~/.claude-profiles/`
 
 #### status.js
 **Flow:**
@@ -798,22 +812,13 @@ To add protected items (never managed):
 
 **Bottleneck:** File copying (scales with ~/.claude size)
 
-## Deployment & Distribution
-
-- **Distribution:** npm registry (`npm install -g claude-switch-profile`)
-- **Footprint:** Requires global npm + Node.js; no standalone binary
-
 ## Security Boundaries
 
 - **Trust model:** Single-user, filesystem permissions, no network access, no auth
 - **Trusted:** Profile config files/dirs, lock files (PID-verified)
 - **Untrusted:** User-provided profile names, archive contents (validated), external config
 
-## Future Architecture Changes
-
-Profile merging, profile versioning, hooks, web UI, cloud sync.
-
 ---
 
-**Last Updated:** 2026-03-31
+**Last Updated:** 2026-04-10
 **Version:** 1.4.0

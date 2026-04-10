@@ -114,7 +114,7 @@ csp
 | `csp create <name>` | Create a new profile (`--from`, `--source`, `-d` options) |
 | `csp launch <name>` | Launch isolated Claude session for a profile |
 | `csp exec <name> -- <cmd>` | Run any command inside isolated profile runtime |
-| `csp use <name>` | Legacy global switch (mutates `~/.claude`) |
+| `csp use [name]` | Legacy global switch (mutates `~/.claude`, defaults to `default`) |
 | `csp save` | Save current state to active profile |
 | `csp list` / `csp ls` | List all profiles |
 | `csp status` | Show CSP status dashboard |

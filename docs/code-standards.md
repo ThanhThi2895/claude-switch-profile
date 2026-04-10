@@ -27,6 +27,7 @@ claude-switch-profile/
 │   │   ├── deactivate.js
 │   │   ├── launch.js
 │   │   ├── uninstall.js
+│   │   ├── update.js
 │   │   ├── select.js
 │   │   ├── status.js
 │   │   └── toggle.js
@@ -104,7 +105,7 @@ import { Command } from 'commander';
 
 // 3. Local modules (relative imports)
 import { getActive, setActive } from '../profile-store.js';
-import { copyItems, moveItems } from '../item-manager.js';
+import { copyItems, restoreItems } from '../item-manager.js';
 import { success, error } from '../output-helpers.js';
 ```
 
@@ -761,5 +762,5 @@ export const withLock = async (fn) => {
 
 ---
 
-**Last Updated:** 2026-03-31
+**Last Updated:** 2026-04-10
 **Version:** 1.4.0
